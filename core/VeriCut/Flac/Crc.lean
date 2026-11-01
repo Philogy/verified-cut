@@ -18,10 +18,11 @@ where
 def crc8Table : Array Nat := crcTable 8 0x07
 def crc16Table : Array Nat := crcTable 16 0x8005
 
+-- The final `%` never changes the value; it saves proving the table entries fit.
 def crc8 (d : ByteArray) : Nat :=
-  d.foldl (fun c b => crc8Table[c ^^^ b.toNat]!) 0
+  d.foldl (fun c b => crc8Table[c ^^^ b.toNat]!) 0 % 256
 
 def crc16 (d : ByteArray) : Nat :=
-  d.foldl (fun c b => ((c <<< 8) % 65536) ^^^ crc16Table[(c >>> 8) ^^^ b.toNat]!) 0
+  d.foldl (fun c b => ((c <<< 8) % 65536) ^^^ crc16Table[(c >>> 8) ^^^ b.toNat]!) 0 % 65536
 
 end VeriCut

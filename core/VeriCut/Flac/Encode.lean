@@ -48,18 +48,25 @@ def partBounds (n warmup p j : Nat) : Nat × Nat :=
   let size := n >>> p
   (if j = 0 then 0 else j * size - warmup, (j + 1) * size - warmup)
 
-def planResidual (maxOrder n warmup : Nat) (r : Array Int) : Residual × Nat :=
+/-- Partition `j` of `2 ^ p`, Rice-coded with the best parameter. -/
+def planPartition (r : Array Int) (n warmup p j : Nat) : Partition :=
+  let ab := partBounds n warmup p j
+  { coding := .rice (bestRice (zigzagSum r ab.1 ab.2) (ab.2 - ab.1)).1, values := r.extract ab.1 ab.2 }
+
+/-- The partition order with the least estimated size, among those that divide the block. -/
+def bestOrder (maxOrder n warmup : Nat) (r : Array Int) : Nat × Nat :=
   let cost p := (List.range (2 ^ p)).foldl (init := 6) fun c j =>
-    let (a, b) := partBounds n warmup p j
-    c + 4 + (bestRice (zigzagSum r a b) (b - a)).2
+    let ab := partBounds n warmup p j
+    c + 4 + (bestRice (zigzagSum r ab.1 ab.2) (ab.2 - ab.1)).2
   let ok p := n % 2 ^ p = 0 && warmup ≤ n >>> p
-  let (p, c) := (List.range (maxOrder + 1)).foldl (init := (0, cost 0)) fun best p =>
+  (List.range (maxOrder + 1)).foldl (init := (0, cost 0)) fun best p =>
     if ok p then let c := cost p; if c < best.2 then (p, c) else best else best
-  let parts := (Array.range (2 ^ p)).map fun j =>
-    let (a, b) := partBounds n warmup p j
-    ({ coding := .rice (bestRice (zigzagSum r a b) (b - a)).1, values := r.extract a b } : Partition)
+
+def planResidual (maxOrder n warmup : Nat) (r : Array Int) : Residual × Nat :=
+  let best := bestOrder maxOrder n warmup r
+  let parts := (Array.range (2 ^ best.1)).map (planPartition r n warmup best.1)
   let wide := parts.any fun q => match q.coding with | .rice k => 15 ≤ k | .raw _ => false
-  (⟨wide, p, parts⟩, c)
+  (⟨wide, best.1, parts⟩, best.2)
 
 /-- Samples from `order` on, minus their prediction. -/
 def residualOf (coefs : Array Int) (shift : Nat) (s : Array Int) (order : Nat) : Array Int :=
@@ -75,9 +82,9 @@ def planBody (st : Settings) (bits : Nat) (s : Array Int) : Body × Nat :=
   match scored with
   | [] => verbatim
   | first :: rest =>
-    let (k, r, _) := rest.foldl (init := first) fun best c => if c.2.2 < best.2.2 then c else best
-    let (res, c) := planResidual st.maxPartitionOrder n k r
-    let fixed := (Body.fixed (s.extract 0 k) res, k * bits + c)
+    let best := rest.foldl (init := first) fun best c => if c.2.2 < best.2.2 then c else best
+    let res := planResidual (min st.maxPartitionOrder 15) n best.1 best.2.1
+    let fixed := (Body.fixed (s.extract 0 best.1) res.1, best.1 * bits + res.2)
     if fixed.2 < verbatim.2 then fixed else verbatim
 
 def trailingZeros (g : Nat) : Nat :=
@@ -91,9 +98,11 @@ where
 def planSubframe (st : Settings) (bits : Nat) (s : Array Int) : Subframe × Nat :=
   if s.all (· == s[0]!) then (⟨0, .constant s[0]!⟩, bits)
   else
-    let wasted := min (trailingZeros (s.foldl (· ||| ·.natAbs) 0)) (bits - 1)
-    let (b, c) := planBody st (bits - wasted) (if wasted = 0 then s else s.map (· / 2 ^ wasted))
-    (⟨wasted, b⟩, c + wasted)
+    let w := min (trailingZeros (s.foldl (· ||| ·.natAbs) 0)) (bits - 1)
+    -- Checked rather than proved: the round trip only needs the samples to be multiples.
+    let wasted := if s.all (· % 2 ^ w == 0) then w else 0
+    let body := planBody st (bits - wasted) (if wasted = 0 then s else s.map (· / 2 ^ wasted))
+    (⟨wasted, body.1⟩, body.2 + wasted)
 
 /-- Channel `c` of the `n` frames from `offset` on. -/
 def channelBlock (x : Pcm) (offset n c : Nat) : Array Int :=
@@ -110,9 +119,9 @@ def planFrame (st : Settings) (x : Pcm) (number offset n : Nat) : Frame :=
     let side := planSubframe st (f.bitsPerSample + 1) (Array.zipWith (· - ·) blocks[0]! blocks[1]!)
     let mid := planSubframe st f.bitsPerSample (Array.zipWith (fun a b => (a + b) / 2) blocks[0]! blocks[1]!)
     let options := [(Channels.leftSide, l, side), (.rightSide, side, r), (.midSide, mid, side)]
-    let (ch, a, b) := options.foldl (init := (Channels.independent 2, l, r)) fun best o =>
+    let best := options.foldl (init := (Channels.independent 2, l, r)) fun best o =>
       if o.2.1.2 + o.2.2.2 < best.2.1.2 + best.2.2.2 then o else best
-    ⟨header ch, #[a.1, b.1]⟩
+    ⟨header best.1, #[best.2.1.1, best.2.2.1]⟩
   else ⟨header (.independent f.channels), plain.map (·.1)⟩
 
 def planFrames (st : Settings) (x : Pcm) : Array Frame :=

@@ -58,10 +58,13 @@ def bodyP (bits n type : Nat) : Parser Body := do
     pure (.lpc (precision + 1) shift.toNat coefs warmup (← residualP n order))
   else fail "reserved subframe type"
 
+def wastedP : Parser Nat := do
+  if (← readBits 1) = 1 then pure ((← unary) + 1) else pure 0
+
 def subframeP (bits n : Nat) : Parser Subframe := do
   check ((← readBits 1) = 0) "subframe padding bit set"
   let type ← readBits 6
-  let wasted ← do if (← readBits 1) = 1 then pure ((← unary) + 1) else pure 0
+  let wasted ← wastedP
   check (wasted < bits) "too many wasted bits"
   pure ⟨wasted, ← bodyP (bits - wasted) n type⟩
 
@@ -93,6 +96,22 @@ def channelsP (code : Nat) : Parser Channels :=
   else if code = 10 then pure .midSide
   else fail "reserved channel assignment"
 
+/-- The block size, after the frame number, from its 4-bit code. -/
+def blockSizeP (code : Nat) : Parser Nat :=
+  if code = 6 then do pure ((← readBits 8) + 1)
+  else if code = 7 then do pure ((← readBits 16) + 1)
+  else lookupCode blockSizeCodes code "block size"
+
+def sampleRateP (info : StreamInfo) (code : Nat) : Parser Nat :=
+  if code = 0 then pure info.sampleRate
+  else if code = 12 then do pure ((← readBits 8) * 1000)
+  else if code = 13 then readBits 16
+  else if code = 14 then do pure ((← readBits 16) * 10)
+  else lookupCode sampleRateCodes code "sample rate"
+
+def bitsPerSampleP (info : StreamInfo) (code : Nat) : Parser Nat :=
+  if code = 0 then pure info.bitsPerSample else lookupCode bitsPerSampleCodes code "sample size"
+
 def headerP (info : StreamInfo) : Parser Header := do
   check ((← readBits 14) = 0x3FFE) "lost frame sync"
   check ((← readBits 1) = 0) "reserved header bit set"
@@ -103,18 +122,9 @@ def headerP (info : StreamInfo) : Parser Header := do
   let bitsCode ← readBits 3
   check ((← readBits 1) = 0) "reserved header bit set"
   let number ← codedNumberP
-  let blockSize ← do
-    if sizeCode = 6 then pure ((← readBits 8) + 1)
-    else if sizeCode = 7 then pure ((← readBits 16) + 1)
-    else lookupCode blockSizeCodes sizeCode "block size"
-  let sampleRate ← do
-    if rateCode = 0 then pure info.sampleRate
-    else if rateCode = 12 then pure ((← readBits 8) * 1000)
-    else if rateCode = 13 then readBits 16
-    else if rateCode = 14 then pure ((← readBits 16) * 10)
-    else lookupCode sampleRateCodes rateCode "sample rate"
-  let bitsPerSample ← do
-    if bitsCode = 0 then pure info.bitsPerSample else lookupCode bitsPerSampleCodes bitsCode "sample size"
+  let blockSize ← blockSizeP sizeCode
+  let sampleRate ← sampleRateP info rateCode
+  let bitsPerSample ← bitsPerSampleP info bitsCode
   check (sampleRate = info.sampleRate) "frame sample rate differs from STREAMINFO"
   check (bitsPerSample = info.bitsPerSample) "frame sample size differs from STREAMINFO"
   check (channels.count = info.channels) "frame channel count differs from STREAMINFO"
@@ -168,13 +178,19 @@ def skipMetadata : Nat → Bool → Parser Unit
     skip (8 * (← readBits 24))
     skipMetadata fuel (last = 1)
 
-def streamP : Parser Stream := do
+/-- The magic and STREAMINFO, and whether it is the last metadata block. -/
+def streamHeadP : Parser (Bool × StreamInfo) := do
   check ((← readBits 32) = streamMagic) "not a FLAC stream"
   let last ← readBits 1
   check ((← readBits 7) = 0 && (← readBits 24) = 34) "first metadata block is not STREAMINFO"
   let info ← infoP
+  pure (last = 1, info)
+
+def streamP : Parser Stream := do
+  let head ← streamHeadP
   let d ← data
-  skipMetadata d.size (last = 1)
-  pure ⟨info, ← framesP info d.size #[]⟩
+  skipMetadata d.size head.1
+  let frames ← framesP head.2 d.size #[]
+  pure ⟨head.2, frames⟩
 
 end VeriCut.Flac

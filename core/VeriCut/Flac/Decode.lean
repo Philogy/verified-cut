@@ -14,11 +14,7 @@ def decode (d : ByteArray) : Except String Pcm := do
 
 /-- Just the STREAMINFO block. -/
 def probe (d : ByteArray) : Except String StreamInfo := do
-  let (i, _) ← (do
-    Parser.check ((← Parser.readBits 32) = streamMagic) "not a FLAC stream"
-    let _ ← Parser.readBits 1
-    Parser.check ((← Parser.readBits 7) = 0 && (← Parser.readBits 24) = 34) "first metadata block is not STREAMINFO"
-    infoP : Parser StreamInfo) d 0
+  let ((_, i), _) ← streamHeadP d 0
   pure i
 
 end VeriCut.Flac

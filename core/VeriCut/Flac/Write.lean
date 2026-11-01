@@ -39,15 +39,19 @@ def writeSubframe (bits : Nat) (w : Writer) (sf : Subframe) : Writer :=
   let w := if sf.wasted = 0 then w.write 1 0 else ((w.write 1 1).zeros (sf.wasted - 1)).write 1 1
   writeBody (bits - sf.wasted) w sf.body
 
+/-- The 4-bit block size code and how many bits of explicit size follow the frame number. -/
+def blockSizeCode (n : Nat) : Nat × Nat :=
+  match codeOf blockSizeCodes n with
+  | some c => (c, 0)
+  | none => if n ≤ 256 then (6, 8) else (7, 16)
+
 def writeHeader (h : Header) (w : Writer) : Writer :=
-  let (sizeCode, sizeBits) := match codeOf blockSizeCodes h.blockSize with
-    | some c => (c, 0)
-    | none => if h.blockSize ≤ 256 then (6, 8) else (7, 16)
-  let w := ((((w.write 14 0x3FFE).write 1 0).write 1 0).write 4 sizeCode)
+  let size := blockSizeCode h.blockSize
+  let w := ((((w.write 14 0x3FFE).write 1 0).write 1 0).write 4 size.1)
   let w := (w.write 4 ((codeOf sampleRateCodes h.sampleRate).getD 0)).write 4 h.channels.code
   let w := (w.write 3 ((codeOf bitsPerSampleCodes h.bitsPerSample).getD 0)).write 1 0
   let w := (codedBytes h.number).foldl (·.write 8 ·) w
-  w.write sizeBits (h.blockSize - 1)
+  w.write size.2 (h.blockSize - 1)
 
 def writeFrame (f : Frame) : ByteArray :=
   let w := writeHeader f.header .empty
@@ -60,9 +64,12 @@ def writeInfo (i : StreamInfo) (w : Writer) : Writer :=
   let w := (((w.write 20 i.sampleRate).write 3 (i.channels - 1)).write 5 (i.bitsPerSample - 1)).write 36 i.totalSamples
   w.write 128 i.md5
 
+/-- Magic and a STREAMINFO block that is the last metadata block. -/
+def writeHead (info : StreamInfo) (w : Writer) : Writer :=
+  writeInfo info ((((w.write 32 streamMagic).write 1 1).write 7 0).write 24 34)
+
 /-- Magic, a single STREAMINFO block, then the frames. -/
 def writeStream (info : StreamInfo) (frames : Array ByteArray) : ByteArray :=
-  let w := ((((Writer.empty.write 32 streamMagic).write 1 1).write 7 0).write 24 34)
-  frames.foldl (· ++ ·) (writeInfo info w).bytes
+  frames.foldl (· ++ ·) (writeHead info .empty).bytes
 
 end VeriCut.Flac

@@ -36,7 +36,7 @@ def writeSigned (w : Writer) (k : Nat) (v : Int) : Writer :=
 
 /-- Pad with zeros to a byte boundary. -/
 def align (w : Writer) : Writer :=
-  w.write ((8 - w.n) % 8) 0
+  w.write ((8 - w.n % 8) % 8) 0
 
 end Writer
 

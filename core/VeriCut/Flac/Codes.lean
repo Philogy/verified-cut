@@ -27,12 +27,17 @@ def codedLength (i : Nat) : Nat :=
   if i < 2 ^ 7 then 1 else if i < 2 ^ 11 then 2 else if i < 2 ^ 16 then 3
   else if i < 2 ^ 21 then 4 else if i < 2 ^ 26 then 5 else if i < 2 ^ 31 then 6 else 7
 
+/-- The low `m` base-64 digits of `i`, most significant first. -/
+def digits64 : Nat → Nat → List Nat
+  | 0, _ => []
+  | m + 1, i => i / 64 ^ m % 64 :: digits64 m i
+
 /-- The UTF-8-like coding of `i < 2 ^ 36`: a lead byte with the length in its
 leading ones, then 6 bits per continuation byte. -/
 def codedBytes (i : Nat) : List Nat :=
   let n := codedLength i
   if n = 1 then [i]
-  else (256 - 2 ^ (8 - n) + i / 64 ^ (n - 1)) :: ((List.range (n - 1)).reverse.map fun j => 128 + i / 64 ^ j % 64)
+  else (256 - 2 ^ (8 - n) + i / 64 ^ (n - 1)) :: (digits64 (n - 1) i).map (128 + ·)
 
 /-- Rice codes fold signed values to `0, -1, 1, -2, …`. -/
 def zigzag (v : Int) : Nat :=
