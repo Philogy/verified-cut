@@ -6,7 +6,7 @@ A cut list (`timeline.json`: clips, each `{path, in, out}` in display frames, ha
 Everything runs in the Lean binary `smartcut` ([`core/Main.lean`](../core/Main.lean)); the app only runs it as a subprocess.
 
 ```mermaid
-flowchart TD
+flowchart LR
   A["App: Timeline.export"] -->|writes timeline.json, runs `smartcut export`| B["doExport (Main.lean)"]
   B --> C["Demux: loadTrack → parseVideo<br/>(moov sample tables only)"]
   C --> D["Bridge: toStream<br/>(sync → no refs, else refs prev sample)"]
