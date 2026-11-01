@@ -78,9 +78,11 @@ Read these before trusting the theorems:
   a self-contained stream that decodes approx-close to its input. In practice
   this is ffmpeg calling VideoToolbox (`h264_videotoolbox`) or libx264. The CLI
   checks frame count, codec, no reordering, and a leading sync sample.
-- **Bridge assumption** (`toStream` in `MP4/Parse.lean`): samples marked sync in
-  `stss` reset the decoder (closed GOPs / IDR). Open-GOP sources would violate
-  it. The ffmpeg tests check it on every sample.
+- **Bridge assumption** (`toStream` in `MP4/Parse.lean`): a sync sample resets
+  the decoder. For H.264/HEVC, sync means listed in `stss` *and* holding an IDR
+  picture; the parser reads the NAL headers to check. Open-GOP I-frames (which
+  x264/ffmpeg list in `stss`) are not sync. For other codecs (ProRes) `stss` is
+  trusted as is. The ffmpeg tests check it on every sample.
 - **Unverified, tested code**: MP4 parsing (`MP4/Parse.lean`, differential-tested
   against ffprobe), MP4 writing (`MP4/Write.lean`), and in the CLI (`Main.lean`) the
   `IO` encode instance and the mux pass that turns the exporter's packet stream into
@@ -89,14 +91,16 @@ Read these before trusting the theorems:
 
 ## Tests
 
-`python3 tests/test_vericut.py` (13 tests, ~20 s) uses ffmpeg as the oracle:
+`python3 tests/test_vericut.py` (16 tests, ~20 s) uses ffmpeg as the oracle:
 
-- probe agrees with ffprobe on sizes, offsets, keyframes and display order of every sample;
+- probe agrees with ffprobe on sizes, offsets, keyframes and display order of every sample,
+  and its sync flags with the IDR NAL units ffmpeg's `trace_headers` sees;
 - whole-clip and keyframe-aligned cuts: decoded frames and **compressed packets byte-identical**;
 - intra-only (ProRes) cuts at any frame copy everything, losslessly;
 - mid-GOP smart cuts (no B-frames, B-frames, real footage, single-GOP clip),
   in both parameter-set modes: every copied frame bit-identical to the source,
   every re-encoded frame above 35 dB PSNR;
+- open GOP (generated `gop24_open.mp4`): cuts at and across non-IDR I-frames;
 - multi-clip timelines; rejection of bad ranges, mismatched clips, `--strict`;
 - proof audit: no `sorry`, no extra axioms.
 
@@ -112,6 +116,10 @@ frame is a keyframe causes the smart-cut tests to fail.
   differential-tested only.
 - **Re-encode needs H.264 (`avc1`)**. HEVC/ProRes clips are copy-only. ProRes is
   intra-only, so it never needs re-encoding.
+- **Open GOP** sources are cut correctly but conservatively: only IDR frames start
+  copy runs, so a cut after a non-IDR I-frame re-encodes up to the next IDR (with
+  x264 `open-gop`, often the rest of the clip). Copying from such an I-frame, minus
+  its leading B-frames, would need per-frame references in the bridge.
 - Constant frame rate; all clips in one timeline share resolution, codec and frame rate.
 - Source edit lists are ignored (frames are addressed by display rank of all samples).
 - Whole input files are read into memory. Next: seek-based streaming copy.

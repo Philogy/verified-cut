@@ -51,7 +51,7 @@ def probe (path : String) : IO Unit := do
   let frames := (Array.range t.samples.size).map fun i =>
     let s := t.samples[i]!
     Json.mkObj [("offset", toJson s.offset), ("size", toJson s.size), ("dts", toJson s.dts),
-      ("cts", toJson s.cts), ("dur", toJson s.dur), ("sync", toJson s.sync), ("display", toJson ranks[i]!)]
+      ("cts", toJson s.cts), ("dur", toJson s.dur), ("keyframe", toJson s.keyframe), ("sync", toJson s.sync), ("display", toJson ranks[i]!)]
   IO.println <| Json.compress <| Json.mkObj [("codec", toJson t.codec), ("timescale", toJson t.timescale),
     ("frames", Json.arr frames)]
 
@@ -107,7 +107,8 @@ def seekFor (t : VideoTrack) (ranks : Array Nat) (frames : List Nat) : Option Se
   let k ← (List.range (lo + 1)).reverse.find? (t.samples[·]!.sync)
   let cts := t.samples[k]!.cts
   guard (0 ≤ cts)
-  guard <| (t.samples.extract (k + 1) t.samples.size).all fun s => !s.sync || cts < s.dts
+  -- The demuxer seeks by `stss`, which may also list open-GOP keyframes.
+  guard <| (t.samples.extract (k + 1) t.samples.size).all fun s => !s.keyframe || cts < s.dts
   -- Rounding down keeps the seek at or before sample `k`; the previous frame is a
   -- whole frame earlier, so ffmpeg's accurate seek drops it.
   pure { us := cts.toNat * 1000000 / t.timescale, rank := ranks[k]! }

@@ -5,7 +5,8 @@ import VeriCut.Spec.Stream
 # MP4 / MOV demuxing: sample tables of the video track
 
 Unverified implementation. `tests/` checks it against ffprobe on every sample
-file. Only the index (`moov`) is parsed; frame bytes are never inspected.
+file. Besides the index (`moov`), only the NAL unit headers of `stss` samples
+are read, to confirm they are IDR pictures.
 -/
 namespace VeriCut.MP4
 
@@ -52,6 +53,11 @@ structure Sample where
   dts    : Nat
   ctsOff : Int
   dur    : Nat
+  /-- Listed in `stss`. Encoders also list open-GOP I-frames there, whose
+  leading pictures reference the previous GOP. -/
+  keyframe : Bool
+  /-- Decoding can start here: a keyframe that is an IDR picture (H.264/HEVC),
+  or any keyframe of another codec. This is what the bridge trusts. -/
   sync   : Bool
   deriving Repr, Inhabited, BEq
 
@@ -66,6 +72,35 @@ structure VideoTrack where
   codec     : String
   samples   : Array Sample
   deriving Inhabited
+
+/-- NAL unit length size of an H.264 (`avcC`) or HEVC (`hvcC`) sample entry,
+with the IDR test for one NAL header byte. `none` for other codecs. -/
+def nalFormat (entries : ByteArray) : Except String (Option (Nat × (UInt8 → Bool))) := do
+  let codec := fourcc entries 4
+  let isAvc := codec == "avc1" || codec == "avc3"
+  if !isAvc && codec != "hvc1" && codec != "hev1" then return none
+  let kids ← parseBoxes entries 86 (u32 entries 0)
+  if isAvc then
+    let c ← need kids "avcC" codec
+    return some (u8 entries (c.body + 4) % 4 + 1, fun h => h &&& 0x1f == 5)
+  else
+    let c ← need kids "hvcC" codec
+    -- IDR_W_RADL, IDR_N_LP. CRA and BLA pictures may have RASL leading pictures
+    -- that reference the previous GOP, so they don't count.
+    return some (u8 entries (c.body + 21) % 4 + 1, fun h => let t := (h >>> 1) &&& 0x3f; t == 19 || t == 20)
+
+/-- Whether the sample at `[offset, offset + size)` holds an IDR NAL unit
+(length-prefixed NAL units, as in MP4 sample data). -/
+def hasIdr (b : ByteArray) (lenSize : Nat) (isIdr : UInt8 → Bool) (offset size : Nat) : Bool :=
+  go (size + 1) offset
+where
+  go : Nat → Nat → Bool
+    | 0, _ => false
+    | fuel + 1, pos =>
+      if pos + lenSize + 1 > offset + size || offset + size > b.size then false else
+      let len := (List.range lenSize).foldl (fun acc k => acc * 256 + u8 b (pos + k)) 0
+      if len == 0 then false
+      else isIdr (b.get! (pos + lenSize)) || go fuel (pos + lenSize + len)
 
 /-- Expand a run-length table of (count, value) pairs. -/
 def expandRuns (b : ByteArray) (body : Nat) (val : Nat → Int) : Array Int := Id.run do
@@ -143,12 +178,14 @@ def parseTrack (b : ByteArray) (trak : Box) : Except String (Option VideoTrack) 
         if 1 ≤ idx && idx ≤ n then a := a.set! (idx - 1) true
       return a
     | none => Array.replicate n true
+  let fmt ← nalFormat entries
   let mut samples := #[]
   let mut dts := 0
   for i in [0:n] do
     let d := durs[i]!.toNat
     samples := samples.push { offset := offsets[i]!, size := sizes[i]!, dts, ctsOff := ctts[i]!,
-                              dur := d, sync := syncs[i]! }
+                              dur := d, keyframe := syncs[i]!,
+                              sync := syncs[i]! && fmt.all fun (ls, idr) => hasIdr b ls idr offsets[i]! sizes[i]! }
     dts := dts + d
   return some { timescale, width := u32 b (tkhd.stop - 8), height := u32 b (tkhd.stop - 4),
                 entries, codec, samples }
@@ -197,8 +234,9 @@ def displayRanks (t : VideoTrack) : Array Nat := Id.run do
 index. A sync sample depends on nothing; every other sample depends on the
 decoder state after the previous sample. Decoder state here means the whole
 decoded picture buffer, and that is exactly what a sync (IDR) sample resets.
-Trusted assumption: `stss` marks only samples that reset the decoder (closed
-GOPs). The ffmpeg tests check it on every sample file. -/
+Trusted assumption: an IDR picture (or, for codecs without NAL units, an
+`stss` sample) resets the decoder. `parseTrack` drops open-GOP keyframes from
+`sync`. The ffmpeg tests check it on every sample file. -/
 def toStream (t : VideoTrack) : VeriCut.Stream Nat :=
   let ranks := displayRanks t
   (List.range t.samples.size).map fun i =>

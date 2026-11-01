@@ -29,6 +29,18 @@ def sample(name):
     return os.path.join(SAMPLES, name)
 
 
+# Same command as in samples/fetch_samples.sh. Generated, not committed.
+OPEN_GOP = "gop24_open.mp4"
+OPEN_GOP_ARGS = ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-t", "4", "-c:v", "libx264",
+                 "-pix_fmt", "yuv420p", "-bf", "2",
+                 "-x264-params", "keyint=24:min-keyint=24:scenecut=0:open-gop=1"]
+
+
+def setUpModule():
+    if not os.path.exists(sample(OPEN_GOP)):
+        run([FFMPEG, "-v", "error", "-y", *OPEN_GOP_ARGS, sample(OPEN_GOP)])
+
+
 def run(args, check=True):
     p = subprocess.run(args, capture_output=True, text=True)
     if check and p.returncode != 0:
@@ -56,6 +68,21 @@ def packet_hashes(path):
     out = run([FFMPEG, "-v", "error", "-i", path, "-map", "0:v:0", "-c", "copy",
                "-f", "framemd5", "-"]).stdout
     return [l.split(",")[-1].strip() for l in out.splitlines() if l and not l.startswith("#")]
+
+
+def idr_packets(path):
+    """Per packet in decode order: does it contain an H.264 IDR slice (nal_unit_type 5)?"""
+    log = run([FFMPEG, "-loglevel", "trace", "-i", path, "-map", "0:v:0", "-c", "copy",
+               "-bsf:v", "trace_headers", "-f", "null", "-"]).stderr
+    out = []
+    for l in log.splitlines():
+        if "[trace_headers" not in l:
+            continue
+        if "Packet:" in l:
+            out.append(False)
+        elif out and "nal_unit_type: 5(IDR)" in l:
+            out[-1] = True
+    return out
 
 
 def raw_frames(path, w, h):
@@ -150,7 +177,15 @@ class ProbeTests(Base):
                 for i, (o, f) in enumerate(zip(ours, ff)):
                     self.assertEqual(o["size"], int(f["size"]), f"size of sample {i}")
                     self.assertEqual(o["offset"], int(f["pos"]), f"offset of sample {i}")
-                    self.assertEqual(o["sync"], "K" in f["flags"], f"sync flag of sample {i}")
+                    self.assertEqual(o["keyframe"], "K" in f["flags"], f"keyframe flag of sample {i}")
+                # sync = a keyframe the decoder can start from (IDR for H.264)
+                if probe(sample(name))["codec"].startswith("avc"):
+                    idr = idr_packets(sample(name))
+                    self.assertEqual(len(idr), len(ours))
+                    for i, (o, d) in enumerate(zip(ours, idr)):
+                        self.assertEqual(o["sync"], o["keyframe"] and d, f"sync flag of sample {i}")
+                else:
+                    self.assertEqual([o["sync"] for o in ours], [o["keyframe"] for o in ours])
                 # display order: our ranks sort the same way as ffprobe's pts
                 by_pts = sorted(range(len(ff)), key=lambda i: (int(ff[i]["pts"]), i))
                 ranks = [0] * len(ff)
@@ -226,6 +261,28 @@ class SmartCutTests(Base):
     def test_multi_clip_smart_cut(self):
         p = sample("bbb_baseline.mp4")
         self.check_export([(p, 500, 560), (p, 10, 200), (p, 1300, 1440)])
+
+
+class OpenGopTests(Base):
+    """Open GOP: stss also lists non-IDR I-frames, whose leading B-frames reference
+    the previous GOP. Copy runs must not start at them."""
+
+    def test_open_gop_keyframes_are_not_sync(self):
+        frames = probe(sample(OPEN_GOP))["frames"]
+        self.assertEqual([i for i, f in enumerate(frames) if f["keyframe"]], [0, 24, 46, 72, 95])
+        self.assertEqual([i for i, f in enumerate(frames) if f["sync"]], [0])
+
+    def test_open_gop_cuts(self):
+        # [46, 90) starts at an I-frame, [40, 90) spans its leading B-frames 46, 47.
+        for a, b in [(46, 90), (40, 90), (0, 90)]:
+            with self.subTest((a, b)):
+                self.check_export([(sample(OPEN_GOP), a, b)])
+
+    def test_open_gop_whole_clip_round_trip(self):
+        n = len(probe(sample(OPEN_GOP))["frames"])
+        out, rep = self.export([(sample(OPEN_GOP), 0, n)], "--strict")
+        self.assertEqual(decoded_hashes(out), decoded_hashes(sample(OPEN_GOP)))
+        self.assertEqual(packet_hashes(out), packet_hashes(sample(OPEN_GOP)))
 
 
 class RejectionTests(Base):

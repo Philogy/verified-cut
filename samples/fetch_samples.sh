@@ -5,6 +5,8 @@
 #   prores_intra.mov   synthetic ProRes 422 Proxy, every frame a keyframe
 #   gop30_nob.mp4      synthetic H.264, keyframe every 30 frames, no B-frames
 #   gop24_bframes.mp4  synthetic H.264, keyframe every 24 frames, 2 B-frames
+#   gop24_open.mp4     as gop24_bframes but open GOP: only frame 0 is IDR, yet stss
+#                      lists every I-frame (not committed; the tests generate it too)
 set -euo pipefail
 cd "$(dirname "$0")"
 curl -sSfL -o bbb_baseline.mp4 https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4
@@ -15,4 +17,6 @@ ffmpeg -v error -y "${src[@]}" -t 6 -c:v libx264 -pix_fmt yuv420p -bf 0 \
   -x264-params keyint=30:min-keyint=30:scenecut=0 gop30_nob.mp4
 ffmpeg -v error -y "${src[@]}" -t 6 -c:v libx264 -pix_fmt yuv420p -bf 2 \
   -x264-params keyint=24:min-keyint=24:scenecut=0 gop24_bframes.mp4
+ffmpeg -v error -y "${src[@]}" -t 4 -c:v libx264 -pix_fmt yuv420p -bf 2 \
+  -x264-params keyint=24:min-keyint=24:scenecut=0:open-gop=1 gop24_open.mp4
 ls -la
