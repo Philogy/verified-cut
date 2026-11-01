@@ -97,9 +97,9 @@ record) # record <seconds> <host.mov>: screen video of the guest
 	ssh_vm "rm -f /tmp/vm-rec.mov; screencapture -x -v -V $1 /tmp/vm-rec.mov && cat /tmp/vm-rec.mov" >"$2"
 	;;
 ax) ssh_vm "osascript -e 'tell application \"System Events\" to tell process \"VerifiedCut\" to get entire contents of window 1'" | tr ',' '\n' ;;
-import | step | drag | rulerclick | value | export | status | click | ids | windows | allow) osa "$cmd" "$@" ;;
+import | step | drag | rulerclick | value | enabled | export | status | click | ids | windows | allow) osa "$cmd" "$@" ;;
 *)
-	echo "usage: $0 create|start|stop|setup|install|launch|quit|ssh|shot F|ocr|record S F|ax|import F|step ROW in|out N|drag LANE in|out DX|export DIR NAME|status|click ID [ROW]|ids|windows|allow" >&2
+	echo "usage: $0 create|start|stop|setup|install|launch|quit|ssh|shot F|ocr|record S F|ax|import F|step ROW in|out N|drag LANE in|out DX|export DIR NAME|status|click ID [ROW]|enabled ID|ids|windows|allow" >&2
 	exit 2
 	;;
 esac

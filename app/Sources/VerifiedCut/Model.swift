@@ -160,11 +160,20 @@ final class Timeline {
         busy = true
         defer { busy = false }
         status = "Exporting…"
+        let clock = ContinuousClock()
+        let start = clock.now
         do {
             let r = try await VeriCut.export(clips, to: url)
             status = "Exported \(r.frames) frames in \(r.ms) ms: copied \(r.copied) losslessly, re-encoded \(r.reencoded)."
+            let elapsed = (clock.now - start).formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated, fractionalPart: .show(length: 1)))
+            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64
+            let size = bytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "unknown size"
+            // Not awaited: a pending permission prompt must not keep the export button disabled.
+            Task { await Notifier.post(title: "Export finished", body: "\(url.lastPathComponent) · \(size) · \(elapsed)") }
         } catch {
             status = "Export failed: \(error.localizedDescription)"
+            let message = "\(url.lastPathComponent): \(error.localizedDescription.prefix(200))"
+            Task { await Notifier.post(title: "Export failed", body: message) }
         }
     }
 }

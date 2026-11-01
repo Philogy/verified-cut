@@ -30,6 +30,7 @@ scripts/vm.sh step 1 in 100    # clip 1, In stepper, 100 clicks up (out = Out, n
 scripts/vm.sh drag 1 in 40     # drag clip 1's In handle 40 points right with cliclick; prints the new In frame
 scripts/vm.sh rulerclick 300   # click the ruler 300 points from its left edge (seeks); prints the transport time
 scripts/vm.sh value transport.time   # value of any control by accessibility id
+scripts/vm.sh enabled export        # whether a control is enabled (false while exporting)
 scripts/vm.sh click clip.in.snap 1   # click any control by accessibility id (row-scoped ids take a row)
 scripts/vm.sh export /tmp out.mp4
 scripts/vm.sh status           # plan summary, frame total, status line, one line per clip
@@ -63,7 +64,8 @@ ids repeat in each. `clipRow(n)` and `clipLane(n)` in `lib.applescript` find the
 | id | role | what |
 |---|---|---|
 | `import` | button | Import… |
-| `export` | button | Export… |
+| `export` | button | Export… (disabled while exporting) |
+| `export.progress` | AXUnknown | indeterminate bar above the status line, present only while exporting |
 | `transport.play` | button | play/pause (space) |
 | `transport.time` | static text | "m:ss.ss / m:ss.ss", playhead / output duration |
 | `timeline.frames` | static text | total output frames |

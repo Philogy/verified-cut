@@ -19,7 +19,17 @@ struct ContentView: View {
                 toolbar
                 Divider()
                 TimelineEditor(timeline: timeline)
-                Divider()
+                ZStack {
+                    Divider()
+                    if timeline.busy {
+                        BusyBar()
+                            .accessibilityElement()
+                            .accessibilityLabel("Exporting")
+                            .accessibilityIdentifier("export.progress")
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: timeline.busy)
                 Text(timeline.status)
                     .font(.callout).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -69,11 +79,32 @@ struct ContentView: View {
     }
 
     private func chooseExport() {
+        guard !timeline.busy else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.mpeg4Movie]
         panel.nameFieldStringValue = "export.mp4"
         if panel.runModal() == .OK, let url = panel.url {
             Task { await timeline.export(to: url) }
+        }
+    }
+}
+
+/// Indeterminate progress: a short accent segment gliding back and forth along a 2pt track.
+struct BusyBar: View {
+    @State private var right = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width * 0.18
+            Capsule()
+                .fill(Color.accentColor.opacity(0.85))
+                .frame(width: w)
+                .offset(x: right ? geo.size.width - w : 0)
+        }
+        .frame(height: 2)
+        .background(Color.white.opacity(0.06))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { right = true }
         }
     }
 }
