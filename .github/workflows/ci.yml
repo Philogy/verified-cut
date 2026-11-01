@@ -45,8 +45,7 @@ jobs:
         run: python3 tests/test_vericut.py
 
   comparator:
-    # `lake comparator` ships with Lake from Lean v4.35.0; the project is pinned to v4.33.0, so this
-    # job runs the v4.35.0 toolchain over it. Its sandbox is bubblewrap, so Linux only.
+    # `lake comparator` ships with Lake from Lean v4.35.0. Its sandbox is bubblewrap, so Linux only.
     name: lake comparator
     runs-on: ubuntu-latest
     defaults:
@@ -64,6 +63,4 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - name: Compare VeriCut.Challenge against VeriCut.CorrectnessFast
-        run: |
-          echo "leanprover/lean4:v4.35.0" > lean-toolchain
-          lake comparator
+        run: lake comparator
