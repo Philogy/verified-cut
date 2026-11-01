@@ -184,16 +184,27 @@ def planFrames (st : Settings) (x : Pcm) : Array Frame :=
 /-- Frame sizes go in 24 bits; 0 means unknown. -/
 def fitFrameSize (v : Nat) : Nat := if v < 2 ^ 24 then v else 0
 
+/-- Plan and write frame `k`. -/
+def encodeFrame (st : Settings) (x : Pcm) (k : Nat) : ByteArray :=
+  let b := st.clampedBlockSize
+  writeFrame (planFrame st x k (k * b) (min b (x.length - k * b)))
+
+/-- The frames' bytes one after another, and their smallest and largest size. Each frame is
+planned and written before the next, so only one is held at a time. -/
+def encodeFrames (st : Settings) (x : Pcm) : ByteArray × Nat × Nat :=
+  let b := st.clampedBlockSize
+  (List.range ((x.length + b - 1) / b)).foldl (init := (.empty, 0, 0)) fun (out, lo, hi) k =>
+    let f := encodeFrame st x k
+    (out ++ f, if k = 0 then f.size else min lo f.size, max hi f.size)
+
 def encode (st : Settings) (x : Pcm) : ByteArray :=
-  let frames := (planFrames st x).map writeFrame
-  let maxSize := frames.foldl (max · ·.size) 0
-  let minSize := frames.foldl (min · ·.size) maxSize
+  let (body, minSize, maxSize) := encodeFrames st x
   let f := x.format
   let info : StreamInfo := {
     minBlockSize := st.clampedBlockSize, maxBlockSize := st.clampedBlockSize,
     minFrameSize := fitFrameSize minSize, maxFrameSize := fitFrameSize maxSize,
     sampleRate := f.sampleRate, channels := f.channels, bitsPerSample := f.bitsPerSample,
     totalSamples := x.length, md5 := 0 }
-  writeStream info frames
+  (writeHead info .empty).bytes ++ body
 
 end VeriCut.Flac
