@@ -44,7 +44,7 @@ theorem bestOrder_ok (hw : warmup ≤ n) :
 /-- Values of the first `m` of `2 ^ p` partitions of size `size`. -/
 theorem partitions_values (size p : Nat) (g : Nat → Partition)
     (hg : ∀ j, (g j).values = r.extract (partBounds n warmup p j).1 (partBounds n warmup p j).2)
-    (hsize : n >>> p = size) (hw : warmup ≤ size) :
+    (hsize : n >>> p = size) :
     ∀ m, 1 ≤ m → ((List.range m).map g).foldl (· ++ ·.values) #[] = r.extract 0 (m * size - warmup) := by
   intro m hm
   induction m with
@@ -90,7 +90,7 @@ theorem planResidual_spec (hmax : maxOrder ≤ 15) (hw : warmup ≤ n) (hr : r.s
   have hpos : 1 ≤ 2 ^ bo.1 := Nat.one_le_two_pow
   refine ⟨?_, ?_⟩
   · simp only [Residual.values, ← Array.foldl_toList, hres]
-    rw [partitions_values n warmup r (n / 2 ^ bo.1) bo.1 _ (fun j => rfl) hsize hwp _ hpos, ← hn]
+    rw [partitions_values n warmup r (n / 2 ^ bo.1) bo.1 _ (fun j => rfl) hsize _ hpos, ← hn]
     exact Array.extract_eq_self_of_le (by omega)
   · have hsplit : List.range (2 ^ bo.1) = 0 :: (List.range (2 ^ bo.1 - 1)).map Nat.succ := by
       rw [← List.range_succ_eq_map, Nat.sub_add_cancel hpos]
@@ -142,7 +142,7 @@ theorem inRange_div (bits w : Nat) (v : Int) (hv : InRange bits v) (hw : w ≤ b
   · apply Int.lt_of_mul_lt_mul_right _ (Int.le_of_lt hpos)
     rw [he, ← hp]; exact hi
 
-theorem planBody_spec (st : Settings) (bits : Nat) (s : Array Int) (hb : 0 < bits)
+theorem planBody_spec (st : Settings) (bits : Nat) (s : Array Int)
     (hr : ∀ v ∈ s, InRange bits v) :
     (planBody st bits s).1.samples s.size = s ∧ (planBody st bits s).1.WF bits s.size := by
   have verbatim : (Body.verbatim s).samples s.size = s ∧ (Body.verbatim s).WF bits s.size :=
@@ -192,14 +192,14 @@ theorem planSubframe_spec (st : Settings) (bits : Nat) (s : Array Int) (hb : 0 <
       by_cases h0 : w = 0
       · subst h0
         simp only [if_true, Nat.sub_zero]
-        obtain ⟨hs, hwf⟩ := planBody_spec st bits s hb hr
+        obtain ⟨hs, hwf⟩ := planBody_spec st bits s hr
         exact ⟨by simpa [Subframe.samples] using hs, hb, hwf⟩
       · simp only [h0, if_false]
         have hdiv' : ∀ v ∈ s, v % 2 ^ w = 0 := by
           intro v hv
           obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 hv
           simpa using hdiv i hi
-        obtain ⟨hs, hwf⟩ := planBody_spec st (bits - w) (s.map (· / 2 ^ w)) (by omega) (by
+        obtain ⟨hs, hwf⟩ := planBody_spec st (bits - w) (s.map (· / 2 ^ w)) (by
           intro v hv
           obtain ⟨u, hu, rfl⟩ := Array.mem_map.1 hv
           exact inRange_div bits w u (hr u hu) (by omega) (hdiv' u hu))
@@ -211,7 +211,7 @@ theorem planSubframe_spec (st : Settings) (bits : Nat) (s : Array Int) (hb : 0 <
         simp only [Array.getElem_map, Function.comp]
         exact Int.ediv_mul_cancel (Int.dvd_of_emod_eq_zero (hdiv' _ (Array.getElem_mem h2)))
     · simp only [if_true, Nat.sub_zero]
-      obtain ⟨hs, hwf⟩ := planBody_spec st bits s hb hr
+      obtain ⟨hs, hwf⟩ := planBody_spec st bits s hr
       exact ⟨by simpa [Subframe.samples] using hs, hb, hwf⟩
 
 end VeriCut.Flac

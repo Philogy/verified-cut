@@ -26,8 +26,8 @@ LONG = os.environ.get("LONG") == "1"
 TMP = tempfile.mkdtemp(prefix="vericut-test-")
 
 
-def run(args, check=True):
-    p = subprocess.run(args, capture_output=True)
+def run(args, check=True, cwd=None):
+    p = subprocess.run(args, capture_output=True, cwd=cwd)
     if check and p.returncode != 0:
         raise AssertionError(f"{args} failed ({p.returncode}): {p.stderr.decode().strip()}")
     return p
@@ -242,6 +242,68 @@ class Export(unittest.TestCase):
             self.assertIn(msg, res.stderr)
 
 
+def write_wav_extensible(path, samples, rate, channels, bits, container=None):
+    """WAVE_FORMAT_EXTENSIBLE with the PCM subformat, as ffmpeg writes 24-bit and multichannel files."""
+    width = container or (bits + 7) // 8
+    shift = 8 * width - bits
+    data = b"".join(((s << shift) & ((1 << (8 * width)) - 1)).to_bytes(width, "little") for s in samples)
+    guid = bytes([1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71])
+    fmt = struct.pack("<HHIIHHHHI", 0xFFFE, channels, rate, rate * channels * width, channels * width,
+                      8 * width, 22, bits, 0) + guid
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"LIST" + struct.pack("<I", 4) + b"INFO" \
+        + b"data" + struct.pack("<I", len(data)) + data
+    with open(path, "wb") as f:
+        f.write(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
+class WavInput(unittest.TestCase):
+    """What the app relies on: plain and extensible PCM WAVs load; anything else makes `probe` fail."""
+
+    def test_extensible_24bit(self):
+        samples = synth("tone", 3000, 2, 24)
+        w = tmp("ext24.wav")
+        write_wav_extensible(w, samples, 48000, 2, 24)
+        self.assertEqual(vericut("probe", w), {"sampleRate": 48000, "channels": 2, "bitsPerSample": 24,
+                                               "samples": 3000, "format": "wav"})
+        out = tmp("ext24.flac")
+        vericut("encode", w, out)
+        self.assertEqual(flac_decode_raw(out, 24), raw_of(samples, 24))
+
+    def test_ffmpeg_written(self):
+        for codec, bits in [("pcm_s16le", 16), ("pcm_s24le", 24)]:
+            for ch in (1, 2, 6):
+                with self.subTest(codec=codec, channels=ch):
+                    w = tmp(f"ff_{codec}_{ch}.wav")
+                    run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.5",
+                         "-ac", str(ch), "-ar", "44100", "-c:a", codec, w])
+                    info = vericut("probe", w)
+                    self.assertEqual((info["bitsPerSample"], info["channels"]), (bits, ch))
+                    out = tmp(f"ff_{codec}_{ch}.flac")
+                    vericut("encode", w, out)
+                    raw = run(["ffmpeg", "-v", "error", "-i", w, "-f", codec[4:], "-"]).stdout
+                    self.assertEqual(flac_decode_raw(out, bits), raw)
+
+    def test_probe_rejects(self):
+        cases = {
+            "float": ["-c:a", "pcm_f32le"],
+            "alaw": ["-c:a", "pcm_alaw"],
+            "mp3": ["-c:a", "libmp3lame", "-f", "wav"],
+        }
+        for name, args in cases.items():
+            with self.subTest(kind=name):
+                w = tmp(f"bad_{name}.wav")
+                p = run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=duration=0.2", *args, w],
+                        check=False)
+                if p.returncode != 0:
+                    self.skipTest(f"ffmpeg can't write {name}")
+                res = vericut("probe", w, check=False)
+                self.assertNotIsInstance(res, dict)
+                self.assertNotEqual(res.returncode, 0)
+        many = tmp("bad_9ch.wav")
+        write_wav_extensible(many, [0] * 90, 44100, 9, 16)
+        self.assertNotEqual(vericut("probe", many, check=False).returncode, 0)
+
+
 class Cli(unittest.TestCase):
     def test_peaks(self):
         s = [0, 0] * 50 + [16384, 16384] * 50 + [-32768, -32768] * 50
@@ -252,6 +314,16 @@ class Cli(unittest.TestCase):
         f = tmp("peaks.flac")
         vericut("encode", w, f)
         self.assertEqual(vericut("peaks", f, "3"), p)
+
+    def test_peaks_count(self):
+        # the app asks for min(samples / 32, 100000) buckets; the count must be exact for any request
+        w = tmp("peaks_count.wav")
+        write_wav(w, synth("noise", 1000, 2, 16), 44100, 2, 16)
+        for n in (0, 1, 7, 31, 1000, 1001, 4096, 100000):
+            with self.subTest(buckets=n):
+                p = vericut("peaks", w, str(n))
+                self.assertEqual((len(p["min"]), len(p["max"])), (n, n))
+                self.assertTrue(all(-1 <= a <= b <= 1 for a, b in zip(p["min"], p["max"])))
 
     def test_errors(self):
         bad = tmp("bad.wav")
@@ -270,10 +342,12 @@ class ProofAudit(unittest.TestCase):
         src = os.path.join(core, "VeriCut/Correctness.lean")
         if not os.path.exists(src):
             self.skipTest("no Correctness.lean")
-        p = run(["lake", "env", "lean", src], check=False)
+        p = run(["lake", "env", "lean", src], check=False, cwd=core)
         out = (p.stdout + p.stderr).decode()
         self.assertEqual(p.returncode, 0, out)
         self.assertNotIn("sorry", out)
+        # Correctness.lean pins each theorem's axioms with #guard_msgs; a change fails the build above.
+        self.assertNotIn("error", out)
 
 
 if __name__ == "__main__":

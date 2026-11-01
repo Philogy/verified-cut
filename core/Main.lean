@@ -45,6 +45,8 @@ def probe (path : String) : IO Unit := do
     IO.println (formatJson i.format i.totalSamples "flac").compress
   else
     let x ← liftE path (Wav.parse d)
+    -- The app converts what this rejects, so reject here what `export` would.
+    liftE path x.validate
     IO.println (formatJson x.format x.length "wav").compress
 
 /-- Per bucket, min and max of the channel average, in units of 1/10000 of full scale. -/
