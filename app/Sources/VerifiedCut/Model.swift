@@ -68,7 +68,9 @@ final class Timeline {
     /// Preview only (not verified): an AVMutableComposition of the clip ranges.
     func rebuildPreview() {
         let comp = AVMutableComposition()
-        guard let track = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return }
+        guard let track = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
+              let audioTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { return }
         let clips = self.clips
         Task { @MainActor in
             var cursor = CMTime.zero
@@ -80,6 +82,9 @@ final class Timeline {
                 let range = CMTimeRange(start: CMTime(value: Int64(c.inFrame) * d, timescale: ts),
                                         duration: CMTime(value: Int64(c.length) * d, timescale: ts))
                 try? track.insertTimeRange(range, of: src, at: cursor)
+                if let srcAudio = try? await asset.loadTracks(withMediaType: .audio).first {
+                    try? audioTrack.insertTimeRange(range, of: srcAudio, at: cursor)
+                }
                 cursor = cursor + range.duration
             }
             self.player.replaceCurrentItem(with: AVPlayerItem(asset: comp))
