@@ -4,3 +4,5 @@ app/.swiftpm/
 *.tmp.mp4
 __pycache__/
 .DS_Store
+samples/stock/
+samples/fetch_stock.sh
