@@ -15,7 +15,7 @@ really is a function of (bytes, reference pictures). That is the one modelling
 assumption, and it is the definition of a block-based predictive codec.
 -/
 
-namespace SmartCut
+namespace VeriCut
 
 /-- One compressed frame. `refs` are decode-order indices of the packets whose
 decoded pictures this packet predicts from. `pts` is its display position. -/
@@ -82,4 +82,4 @@ def concatStreams {α} : List (Stream α) → Stream α
   | [] => []
   | x :: xs => x ++ shift x.length (concatStreams xs)
 
-end SmartCut
+end VeriCut

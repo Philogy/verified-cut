@@ -1,6 +1,6 @@
-"""End-to-end tests: the Lean `smartcut` binary against ffmpeg as the oracle.
+"""End-to-end tests: the Lean `vericut` binary against ffmpeg as the oracle.
 
-What "correct" means (mirrors the Lean spec, `core/SmartCut/Spec/Export.lean`):
+What "correct" means (mirrors the Lean spec, `core/VeriCut/Spec/Export.lean`):
   * the output has exactly the requested frames, in display order;
   * every frame the plan *copies* decodes bit-identically to the source frame
     (ffmpeg `framemd5` of decoded pictures), and its compressed packet is
@@ -8,17 +8,17 @@ What "correct" means (mirrors the Lean spec, `core/SmartCut/Spec/Export.lean`):
   * every re-encoded frame is close to the source (PSNR threshold), the
     `approx` relation of the encoder contract.
 
-Run:  python3 tests/test_smartcut.py            (from the project root)
-Env:  SMARTCUT_BIN      path to the smartcut binary (default core/.lake/build/bin/smartcut)
-      SMARTCUT_ENCODER  ffmpeg encoder for boundary frames (default libx264;
+Run:  python3 tests/test_vericut.py            (from the project root)
+Env:  VERICUT_BIN      path to the vericut binary (default core/.lake/build/bin/vericut)
+      VERICUT_ENCODER  ffmpeg encoder for boundary frames (default libx264;
                         use h264_videotoolbox on a Mac for the hardware path)
       FFMPEG / FFPROBE  tool paths
 """
 import json, math, os, subprocess, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BIN = os.environ.get("SMARTCUT_BIN", os.path.join(ROOT, "core/.lake/build/bin/smartcut"))
-ENCODER = os.environ.get("SMARTCUT_ENCODER", "libx264")
+BIN = os.environ.get("VERICUT_BIN", os.path.join(ROOT, "core/.lake/build/bin/vericut"))
+ENCODER = os.environ.get("VERICUT_ENCODER", "libx264")
 FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
 FFPROBE = os.environ.get("FFPROBE", "ffprobe")
 SAMPLES = os.path.join(ROOT, "samples")
@@ -36,12 +36,12 @@ def run(args, check=True):
     return p
 
 
-def smartcut(*args, check=True):
+def vericut(*args, check=True):
     return run([BIN, *args], check=check)
 
 
 def probe(path):
-    return json.loads(smartcut("probe", path).stdout)
+    return json.loads(vericut("probe", path).stdout)
 
 
 def decoded_hashes(path):
@@ -96,7 +96,7 @@ class Base(unittest.TestCase):
         out = os.path.join(self.tmp.name, "out.mp4")
         with open(tl, "w") as f:
             json.dump({"clips": [{"path": p, "in": a, "out": b} for p, a, b in clips]}, f)
-        p = smartcut("export", tl, out, "--encoder", ENCODER, *opts, check=check)
+        p = vericut("export", tl, out, "--encoder", ENCODER, *opts, check=check)
         if not check:
             return p
         return out, json.loads(p.stdout)
@@ -254,12 +254,13 @@ class ProofAuditTests(unittest.TestCase):
 
     MAIN = ["picture_extract", "decode_extract", "decode_concatStreams", "export_correct",
             "export_exact", "copySet_copyable", "copyable_maximal", "table_eq_copyable",
-            "plan_valid", "plan_covers", "plan_copy_copyable"]
+            "plan_valid", "plan_covers", "plan_copy_copyable",
+            "exportTimeline_correct", "MP4.toStream_wellFormed"]
     ALLOWED = {"propext", "Classical.choice", "Quot.sound"}
 
     def test_axioms(self):
         core = os.path.join(ROOT, "core")
-        src = "import SmartCut\n" + "".join(f"#print axioms SmartCut.{t}\n" for t in self.MAIN)
+        src = "import VeriCut\n" + "".join(f"#print axioms VeriCut.{t}\n" for t in self.MAIN)
         with tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False) as f:
             f.write(src)
         try:

@@ -1,23 +1,23 @@
 import Foundation
 
-/// Thin wrapper around the Lean `smartcut` command-line tool.
+/// Thin wrapper around the Lean `vericut` command-line tool.
 /// All planning and muxing happens there; this file only runs it and decodes JSON.
-enum SmartCut {
+enum VeriCut {
     struct Failure: LocalizedError {
         let message: String
         var errorDescription: String? { message }
     }
 
-    /// Where the Lean binary lives: $SMARTCUT_BIN, else the Lake build output
-    /// next to this source tree (../core/.lake/build/bin/smartcut).
+    /// Where the Lean binary lives: $VERICUT_BIN, else the Lake build output
+    /// next to this source tree (../core/.lake/build/bin/vericut).
     static var binary: URL {
-        if let p = ProcessInfo.processInfo.environment["SMARTCUT_BIN"] {
+        if let p = ProcessInfo.processInfo.environment["VERICUT_BIN"] {
             return URL(fileURLWithPath: p)
         }
-        let here = URL(fileURLWithPath: #filePath)  // app/Sources/VerifiedCut/SmartCut.swift
+        let here = URL(fileURLWithPath: #filePath)  // app/Sources/VerifiedCut/VeriCut.swift
         return here.deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("core/.lake/build/bin/smartcut")
+            .appendingPathComponent("core/.lake/build/bin/vericut")
     }
 
     /// GUI apps don't inherit the shell PATH, so look in the usual places.
@@ -45,7 +45,7 @@ enum SmartCut {
             p.waitUntilExit()
             guard p.terminationStatus == 0 else {
                 let msg = String(decoding: errData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-                throw Failure(message: msg.isEmpty ? "smartcut exited with \(p.terminationStatus)" : msg)
+                throw Failure(message: msg.isEmpty ? "vericut exited with \(p.terminationStatus)" : msg)
             }
             return data
         }.value

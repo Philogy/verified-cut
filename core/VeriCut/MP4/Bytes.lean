@@ -1,7 +1,7 @@
 /-!
 # Big-endian byte helpers (unverified implementation, tested against ffprobe)
 -/
-namespace SmartCut.MP4
+namespace VeriCut.MP4
 
 def u8 (b : ByteArray) (o : Nat) : Nat := (b.get! o).toNat
 def u16 (b : ByteArray) (o : Nat) : Nat := u8 b o * 0x100 + u8 b (o + 1)
@@ -34,4 +34,4 @@ def box (typ : String) (payload : List ByteArray) : ByteArray :=
 def fullBox (typ : String) (version flags : Nat) (payload : List ByteArray) : ByteArray :=
   box typ (be 1 version :: be 3 flags :: payload)
 
-end SmartCut.MP4
+end VeriCut.MP4

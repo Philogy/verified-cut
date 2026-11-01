@@ -1,4 +1,4 @@
-import SmartCut.MP4.Parse
+import VeriCut.MP4.Parse
 
 /-!
 # MP4 muxing (unverified implementation, tested with ffmpeg)
@@ -9,7 +9,7 @@ the sample's display slot `k` gets `pts = k·dur + delay`, where `delay` is the
 smallest shift that keeps every composition offset non-negative. An edit list
 hides `delay`, so playback starts at time 0.
 -/
-namespace SmartCut.MP4
+namespace VeriCut.MP4
 
 /-- One sample to write. `src` indexes the input buffers. `entry` is the
 1-based sample-description index. `disp` is its display slot in the output. -/
@@ -122,4 +122,4 @@ def writeFile (path : System.FilePath) (srcs : Array ByteArray) (t : OutTrack) :
     if let some (src, a, z) := cur then h.write (srcs[src]!.extract a z)
     h.write (moovBox t dataStart)
 
-end SmartCut.MP4
+end VeriCut.MP4

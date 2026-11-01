@@ -11,33 +11,41 @@ struct ClipRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(clip.name).font(.headline)
+                    .accessibilityIdentifier("clip.name")
                 Spacer()
                 Text("\(clip.length) frames · \(timecode(clip.length))")
                     .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("clip.length")
                 Button(role: .destructive, action: onRemove) { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
+                    .accessibilityIdentifier("clip.remove")
             }
             KeyframeStrip(clip: clip)
                 .frame(height: 14)
-            frameControl("In", value: $clip.inFrame, range: 0...(clip.outFrame - 1))
-            frameControl("Out", value: $clip.outFrame, range: (clip.inFrame + 1)...clip.probe.frameCount)
+                .accessibilityIdentifier("clip.keyframes")
+            frameControl("In", id: "clip.in", value: $clip.inFrame, range: 0...(clip.outFrame - 1))
+            frameControl("Out", id: "clip.out", value: $clip.outFrame, range: (clip.inFrame + 1)...clip.probe.frameCount)
         }
         .padding(.vertical, 4)
     }
 
-    private func frameControl(_ label: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+    private func frameControl(_ label: String, id: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
         HStack {
             Text(label).frame(width: 28, alignment: .leading)
             Slider(value: Binding(get: { Double(value.wrappedValue) },
                                   set: { value.wrappedValue = Int($0.rounded()) }),
                    in: Double(range.lowerBound)...Double(max(range.upperBound, range.lowerBound + 1)),
                    onEditingChanged: { editing in if !editing { onCommit() } })
+                .accessibilityIdentifier("\(id).slider")
             Stepper("", value: value, in: range, onEditingChanged: { editing in if !editing { onCommit() } })
                 .labelsHidden()
+                .accessibilityIdentifier("\(id).stepper")
             Button { snap(value) } label: { Image(systemName: "key") }
                 .help("Snap to the nearest keyframe")
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("\(id).snap")
             Text("\(value.wrappedValue)").monospacedDigit().frame(width: 52, alignment: .trailing)
+                .accessibilityIdentifier("\(id).value")
         }
     }
 

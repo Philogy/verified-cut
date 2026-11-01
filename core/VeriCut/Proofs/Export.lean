@@ -1,7 +1,7 @@
-import SmartCut.Spec.Export
-import SmartCut.Proofs.Decode
+import VeriCut.Spec.Export
+import VeriCut.Proofs.Decode
 
-namespace SmartCut
+namespace VeriCut
 
 variable {α Pic : Type} {c : Codec α Pic} {approx : Pic → Pic → Prop}
 
@@ -20,31 +20,33 @@ theorem AllRel.eq_of {β} {a b : List β} (h : AllRel (· = ·) a b) : a = b := 
   | nil => rfl
   | cons hr _ ih => subst hr; rw [ih]
 
+/-- Copying a valid copy set yields a well-formed stream. -/
+theorem extract_wellFormed [Inhabited α] (s : Stream α) (ks : List Nat)
+    (hwf : s.WellFormed) (hks : CopySet s ks) : (extract s ks).WellFormed := by
+  intro j hj r hr
+  have hj' : j < ks.length := by simpa [length_extract] using hj
+  have hk : ks[j] < s.length := hks.bound _ (List.getElem_mem hj')
+  have hget : (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } := by
+    simp [extract, List.getD_eq_getElem?_getD, hk]
+  rw [hget] at hr
+  simp only [List.mem_map] at hr
+  obtain ⟨r0, hr0, rfl⟩ := hr
+  have hrk : r0 < ks[j] := hwf _ hk r0 hr0
+  have hmem : r0 ∈ ks := hks.closed _ (List.getElem_mem hj') hk r0 hr0
+  have hm : ks.idxOf r0 < ks.length := List.idxOf_lt_length_of_mem hmem
+  have hkm : ks[ks.idxOf r0] = r0 := List.getElem_idxOf hm
+  have hp := List.pairwise_iff_getElem.mp hks.sorted
+  rcases Nat.lt_trichotomy (ks.idxOf r0) j with h | h | h
+  · exact h
+  · exfalso; subst h; omega
+  · exfalso; have := hp j _ hj' hm h; omega
+
 theorem render_wellFormed [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx)
     (hwf : s.WellFormed) (seg : Segment) (hseg : ∀ ks, seg = .copy ks → CopySet s ks) :
     (seg.render s enc).WellFormed := by
   cases seg with
   | encode ks => exact enc.wellFormed _
-  | copy ks =>
-    have hks := hseg ks rfl
-    intro j hj r hr
-    simp only [Segment.render] at hj hr ⊢
-    have hj' : j < ks.length := by simpa [length_extract] using hj
-    have hk : ks[j] < s.length := hks.bound _ (List.getElem_mem hj')
-    have hget : (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } := by
-      simp [extract, List.getD_eq_getElem?_getD, hk]
-    rw [hget] at hr
-    simp only [List.mem_map] at hr
-    obtain ⟨r0, hr0, rfl⟩ := hr
-    have hrk : r0 < ks[j] := hwf _ hk r0 hr0
-    have hmem : r0 ∈ ks := hks.closed _ (List.getElem_mem hj') hk r0 hr0
-    have hm : ks.idxOf r0 < ks.length := List.idxOf_lt_length_of_mem hmem
-    have hkm : ks[ks.idxOf r0] = r0 := List.getElem_idxOf hm
-    have hp := List.pairwise_iff_getElem.mp hks.sorted
-    rcases Nat.lt_trichotomy (ks.idxOf r0) j with h | h | h
-    · exact h
-    · exfalso; subst h; omega
-    · exfalso; have := hp j _ hj' hm h; omega
+  | copy ks => exact extract_wellFormed s ks hwf (hseg ks rfl)
 
 /-- Each segment decodes to its target pictures: exactly for copies,
 `approx`-closely for re-encodes. -/
@@ -103,4 +105,4 @@ theorem export_exact [Inhabited α] (s : Stream α) (enc : Encoder α Pic c appr
     simp only [Segment.frames]
     exact decode_extract c s ks hwf (hplan ks hmem)
 
-end SmartCut
+end VeriCut

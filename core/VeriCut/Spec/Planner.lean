@@ -1,4 +1,4 @@
-import SmartCut.Spec.Export
+import VeriCut.Spec.Export
 
 /-!
 # Spec: which frames a cut can copy
@@ -10,7 +10,7 @@ copied iff it is wanted and everything it depends on may be copied.
 wanted frames, so no correct copy-based plan copies more.
 -/
 
-namespace SmartCut
+namespace VeriCut
 
 /-- Keep the frames with display position in `[lo, hi)`. -/
 structure DisplayRange where
@@ -32,4 +32,4 @@ def copyable [Inhabited α] (s : Stream α) (r : DisplayRange) (i : Nat) : Bool 
     (s.getD i default).refs.attach.all fun ⟨x, _⟩ => if x < i then copyable s r x else false
 termination_by i
 
-end SmartCut
+end VeriCut

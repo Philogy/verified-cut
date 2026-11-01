@@ -1,5 +1,5 @@
-import SmartCut.MP4.Bytes
-import SmartCut.Spec.Stream
+import VeriCut.MP4.Bytes
+import VeriCut.Spec.Stream
 
 /-!
 # MP4 / MOV demuxing: sample tables of the video track
@@ -7,7 +7,7 @@ import SmartCut.Spec.Stream
 Unverified implementation. `tests/` checks it against ffprobe on every sample
 file. Only the index (`moov`) is parsed; frame bytes are never inspected.
 -/
-namespace SmartCut.MP4
+namespace VeriCut.MP4
 
 /-- A box located in a byte buffer. -/
 structure Box where
@@ -199,9 +199,9 @@ decoder state after the previous sample. Decoder state here means the whole
 decoded picture buffer, and that is exactly what a sync (IDR) sample resets.
 Trusted assumption: `stss` marks only samples that reset the decoder (closed
 GOPs). The ffmpeg tests check it on every sample file. -/
-def toStream (t : VideoTrack) : SmartCut.Stream Nat :=
+def toStream (t : VideoTrack) : VeriCut.Stream Nat :=
   let ranks := displayRanks t
   (List.range t.samples.size).map fun i =>
     { data := i, refs := if t.samples[i]!.sync then [] else [i - 1], pts := ranks[i]! }
 
-end SmartCut.MP4
+end VeriCut.MP4

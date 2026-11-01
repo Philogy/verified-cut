@@ -6,7 +6,7 @@ import Observation
 struct Clip: Identifiable, Equatable {
     let id = UUID()
     let url: URL
-    let probe: SmartCut.Probe
+    let probe: VeriCut.Probe
     var inFrame: Int
     var outFrame: Int
 
@@ -30,7 +30,7 @@ final class Timeline {
     func add(_ urls: [URL]) async {
         for url in urls {
             do {
-                let p = try await SmartCut.probe(url)
+                let p = try await VeriCut.probe(url)
                 clips.append(Clip(url: url, probe: p, inFrame: 0, outFrame: p.frameCount))
                 status = "Added \(url.lastPathComponent): \(p.frameCount) frames, \(p.keyframes.count) keyframes, \(String(format: "%.2f", p.fps)) fps"
             } catch {
@@ -55,7 +55,7 @@ final class Timeline {
         rebuildPreview()
         guard !clips.isEmpty else { planSummary = ""; return }
         do {
-            let plans = try await SmartCut.plan(clips)
+            let plans = try await VeriCut.plan(clips)
             let segs = plans.flatMap(\.segments)
             let copy = segs.filter { $0.kind == "copy" }.reduce(0) { $0 + $1.frames }
             let enc = segs.filter { $0.kind == "encode" }.reduce(0) { $0 + $1.frames }
@@ -91,7 +91,7 @@ final class Timeline {
         defer { busy = false }
         status = "Exporting…"
         do {
-            let r = try await SmartCut.export(clips, to: url)
+            let r = try await VeriCut.export(clips, to: url)
             status = "Exported \(r.frames) frames in \(r.ms) ms: copied \(r.copied) losslessly, re-encoded \(r.reencoded)."
         } catch {
             status = "Export failed: \(error.localizedDescription)"

@@ -18,15 +18,19 @@ struct ContentView: View {
                     }
                     .onMove { from, to in Task { await timeline.move(from: from, to: to) } }
                 }
+                .accessibilityIdentifier("clip.list")
                 Divider()
                 HStack {
                     Button("Import…") { importing = true }
+                        .accessibilityIdentifier("import")
                     Spacer()
                     Text(timeline.planSummary).font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("plan.summary")
                     Spacer()
                     Button("Export…") { chooseExport() }
                         .keyboardShortcut("e")
                         .disabled(timeline.clips.isEmpty || timeline.busy)
+                        .accessibilityIdentifier("export")
                 }
                 .padding(10)
             }
@@ -34,11 +38,15 @@ struct ContentView: View {
 
             VStack(spacing: 0) {
                 VideoPlayer(player: timeline.player)
+                    // VideoPlayer drops the identifier unless it gets its own container element.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("preview.player")
                 Divider()
                 Text(timeline.status)
                     .font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(10)
+                    .accessibilityIdentifier("status")
             }
             .frame(minWidth: 400)
         }

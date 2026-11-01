@@ -1,4 +1,4 @@
-import SmartCut.Spec.Planner
+import VeriCut.Spec.Planner
 
 /-!
 # Implementation: the smart-cut planner
@@ -7,7 +7,7 @@ Runs in O(n) for the copyable table plus a closure check per copy run.
 Proven against the spec in `Proofs/Impl.lean`.
 -/
 
-namespace SmartCut
+namespace VeriCut
 
 variable {α : Type} [Inhabited α]
 
@@ -51,4 +51,4 @@ def plan (s : Stream α) (r : DisplayRange) : List Segment :=
   let t := copyTable s r s.length
   (runs (fun i => t.getD i false) (displayOrder s r)).map fun p => mkSegment s p.1 p.2
 
-end SmartCut
+end VeriCut

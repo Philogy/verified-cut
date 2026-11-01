@@ -1,10 +1,10 @@
-name = "smartcut"
+name = "vericut"
 version = "0.1.0"
-defaultTargets = ["SmartCut", "smartcut"]
+defaultTargets = ["VeriCut", "vericut"]
 
 [[lean_lib]]
-name = "SmartCut"
+name = "VeriCut"
 
 [[lean_exe]]
-name = "smartcut"
+name = "vericut"
 root = "Main"

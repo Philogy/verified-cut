@@ -1,7 +1,7 @@
-import SmartCut.Impl.Planner
-import SmartCut.Proofs.Planner
+import VeriCut.Impl.Planner
+import VeriCut.Proofs.Planner
 
-namespace SmartCut
+namespace VeriCut
 
 variable {α : Type} [Inhabited α]
 
@@ -163,4 +163,4 @@ theorem plan_copy_copyable (s : Stream α) (r : DisplayRange) (ks : List Nat)
     · cases hseg
   · cases hseg
 
-end SmartCut
+end VeriCut

@@ -1,6 +1,6 @@
-import SmartCut.Spec.Stream
+import VeriCut.Spec.Stream
 
-namespace SmartCut
+namespace VeriCut
 
 variable {α Pic : Type}
 
@@ -159,4 +159,4 @@ theorem decode_concatStreams (c : Codec α Pic) (xs : List (Stream α))
       (wellFormed_concatStreams xs fun y hy => h y (by simp [hy]))]
     rw [ih fun y hy => h y (by simp [hy])]
 
-end SmartCut
+end VeriCut

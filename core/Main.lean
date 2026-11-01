@@ -1,20 +1,21 @@
 import Lean.Data.Json
-import SmartCut.Impl.Planner
-import SmartCut.MP4.Write
+import VeriCut.Impl.Planner
+import VeriCut.Impl.Export
+import VeriCut.MP4.Write
 
 /-!
-# `smartcut` command line
+# `vericut` command line
 
-    smartcut probe  <file>                      frame table as JSON
-    smartcut plan   <timeline.json>             plan as JSON (no output written)
-    smartcut export <timeline.json> <out.mp4>   [--encoder NAME] [--encoder-args "..."]
+    vericut probe  <file>                      frame table as JSON
+    vericut plan   <timeline.json>             plan as JSON (no output written)
+    vericut export <timeline.json> <out.mp4>   [--encoder NAME] [--encoder-args "..."]
                                                 [--ffmpeg PATH] [--strict]
 
 timeline.json: {"clips": [{"path": "a.mp4", "in": 0, "out": 120}, ...]}
 `in`/`out` are display frame numbers, half-open, 0-based.
 -/
 
-open Lean SmartCut SmartCut.MP4
+open Lean VeriCut VeriCut.MP4
 
 structure Clip where
   path : String
@@ -54,13 +55,15 @@ def probe (path : String) : IO Unit := do
   IO.println <| Json.compress <| Json.mkObj [("codec", toJson t.codec), ("timescale", toJson t.timescale),
     ("frames", Json.arr frames)]
 
-/-- Check a clip's range and compute its plan. -/
-def planClip (c : Clip) (t : VideoTrack) : IO (List Segment) := do
+/-- Check a clip's range and compute the plan of its stream `s` (`toStream t`,
+up to packet data). -/
+def planClip {α} [Inhabited α] (c : Clip) (t : VideoTrack) (s : VeriCut.Stream α) :
+    IO (List Segment) := do
   let n := t.samples.size
   unless c.inF < c.outF && c.outF ≤ n do
     throw (IO.userError s!"{c.path}: bad range [{c.inF}, {c.outF}) for {n} frames")
   unless t.samples[0]!.sync do throw (IO.userError s!"{c.path}: first sample is not a sync sample")
-  pure (plan (toStream t) ⟨c.inF, c.outF⟩)
+  pure (plan s ⟨c.inF, c.outF⟩)
 
 structure Opts where
   encoder : Option String := none
@@ -113,11 +116,80 @@ def encodeRange (o : Opts) (src : String) (codec : String) (a b : Nat) (tmp : St
   unless t.samples[0]!.sync do throw (IO.userError "encoded segment does not start with a sync sample")
   pure (bytes, t)
 
+/-- The packet data the exporter carries: where a sample's bytes are (buffer
+`src`, `offset`, `size`) and the sample description they belong to. -/
+structure Pkt where
+  src    : Nat
+  offset : Nat
+  size   : Nat
+  sync   : Bool
+  entry  : ByteArray
+  deriving Inhabited
+
+/-- `toStream t` with each packet's data replaced by its `Pkt` (bytes in buffer
+`si`) and its display position by `pts i`. References are unchanged, so the
+planner sees the same stream. -/
+def pktStream (si : Nat) (t : VideoTrack) (pts : Nat → Nat) : VeriCut.Stream Pkt :=
+  (toStream t).map fun p =>
+    let s := t.samples[p.data]!
+    { p with data := { src := si, offset := s.offset, size := s.size, sync := s.sync,
+                       entry := t.entries }, pts := pts p.data }
+
+structure LoadedClip where
+  clip   : Clip
+  track  : VideoTrack
+  ranks  : Array Nat
+  deriving Inhabited
+
+/-- The IO encoder: ffmpeg via `encodeRange`. Encoded files are appended to the
+byte buffers in the state. -/
+abbrev ExportM := ReaderT (Opts × Array LoadedClip) (StateT (Array ByteArray) IO)
+
+instance : MonadEncode Pkt ExportM where
+  encode j := do
+    let (o, clips) ← read
+    let lc := clips[j.clip]!
+    let c := lc.clip
+    if o.strict then
+      throw (IO.userError s!"{c.path}: {j.frames.length} frames need re-encoding (--strict)")
+    let a := lc.ranks[j.frames.head!]!
+    let b := lc.ranks[j.frames.getLast!]!
+    let tmp := s!"{(← IO.getEnv "TMPDIR").getD "/tmp"}/vericut_{(← IO.monoNanosNow)}_{j.clip}_{a}.mp4"
+    let (eb, et) ← encodeRange o c.path lc.track.codec a b tmp
+    IO.FS.removeFile tmp
+    let srcs ← get
+    set (srcs.push eb)
+    -- `encodeRange` checked there is no reordering: output frame `k` shows at `a + k`.
+    pure (pktStream srcs.size et (a + ·))
+
 def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
   let t0 ← IO.monoMsNow
   let tl ← liftE tlPath (Json.parse (← IO.FS.readFile tlPath) >>= parseTimeline)
   if tl.isEmpty then throw (IO.userError "timeline has no clips")
+  -- 1. load, check and plan every clip
   let mut srcs : Array ByteArray := #[]
+  let mut loaded : Array LoadedClip := #[]
+  let mut cuts : Array (VeriCut.Stream Pkt × List Segment) := #[]
+  let mut fmt : Option (Nat × Nat × Nat × Nat × String) := none
+  for c in tl do
+    let (bytes, t) ← loadTrack c.path
+    let dur := t.samples[0]!.dur
+    if (t.samples.pop).any (·.dur != dur) then
+      throw (IO.userError s!"{c.path}: variable frame rate is not supported")
+    match fmt with
+    | none => fmt := some (t.timescale, dur, t.width, t.height, t.codec)
+    | some (ts, d, w, h, cd) =>
+      unless ts == t.timescale && d == dur && w == t.width && h == t.height && cd == t.codec do
+        throw (IO.userError s!"{c.path}: frame rate, size or codec differs from the first clip")
+    let ranks := displayRanks t
+    let s := pktStream srcs.size t (ranks[·]!)
+    srcs := srcs.push bytes
+    loaded := loaded.push { clip := c, track := t, ranks }
+    cuts := cuts.push (s, ← planClip c t s)
+  -- 2. the proven exporter (`exportTimeline_correct`), with ffmpeg as the encoder
+  let (rendered, bufs) ← ((exportTimeline (m := ExportM) cuts.toList).run (o, loaded)).run srcs
+  srcs := bufs
+  -- 3. mux: sample descriptions, in-band parameter sets, display slots
   let mut entries : Array ByteArray := #[]
   let mut samples : Array OutSample := #[]
   let mut base := 0
@@ -132,22 +204,9 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
   -- currently holds; a segment whose sets differ gets them prepended.
   let mut active : Option ByteArray := none
   let mut lenSize : Option Nat := none
-  let mut fmt : Option (Nat × Nat × Nat × Nat × String) := none
-  for ci in [0:tl.size] do
-    let c := tl[ci]!
-    let (bytes, t) ← loadTrack c.path
-    let dur := t.samples[0]!.dur
-    if (t.samples.pop).any (·.dur != dur) then
-      throw (IO.userError s!"{c.path}: variable frame rate is not supported")
-    match fmt with
-    | none => fmt := some (t.timescale, dur, t.width, t.height, t.codec)
-    | some (ts, d, w, h, cd) =>
-      unless ts == t.timescale && d == dur && w == t.width && h == t.height && cd == t.codec do
-        throw (IO.userError s!"{c.path}: frame rate, size or codec differs from the first clip")
-    let segs ← planClip c t
-    let ranks := displayRanks t
-    let si := srcs.size
-    srcs := srcs.push bytes
+  for (lc, (_, segs), outs) in loaded.toList.zip (cuts.toList.zip rendered) do
+    let c := lc.clip
+    let t := lc.track
     let (es, e) := if o.inband then (if entries.isEmpty then #[t.entries] else entries, 1)
                    else addEntry entries t.entries
     entries := es
@@ -156,44 +215,29 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
       | .error _ => none
     if active.isNone then active := srcSets
     if lenSize.isNone then lenSize := (avcParamSets t.entries).toOption.map (·.1)
-    for seg in segs do
+    for (seg, out) in segs.zip outs do
       segsOut := segsOut.push (segJson seg)
-      match seg with
-      | .copy ks =>
-        let switchTo := if o.inband && srcSets.isSome && srcSets.map (·.data) != active.map (·.data) then srcSets else none
-        if o.inband && t.entries.data != entries[0]!.data && srcSets.isNone then
-          throw (IO.userError s!"{c.path}: codec parameters differ from the first clip and cannot be switched in-band")
-        let mut first := true
-        for k in ks do
-          let s := t.samples[k]!
-          let pre := if first then (switchTo.getD ByteArray.empty) else ByteArray.empty
-          first := false
-          let os : OutSample := { inband := pre, src := si, offset := s.offset, size := s.size, sync := s.sync, entry := e, disp := base + ranks[k]! - c.inF }
-          samples := samples.push os
-        if switchTo.isSome then active := switchTo
-        copied := copied + ks.length
-      | .encode run =>
-        if o.strict then
-          throw (IO.userError s!"{c.path}: {run.length} frames need re-encoding (--strict)")
-        let a := ranks[run.head!]!
-        let b := ranks[run.getLast!]!
-        let tmp := s!"{(← IO.getEnv "TMPDIR").getD "/tmp"}/smartcut_{(← IO.monoNanosNow)}_{ci}_{a}.mp4"
-        let (eb, et) ← encodeRange o c.path t.codec a b tmp
-        IO.FS.removeFile tmp
-        let ei := srcs.size
-        srcs := srcs.push eb
-        let (el, eps) ← liftE "encoder output" (avcParamSets et.entries)
-        if o.inband && lenSize != some el then throw (IO.userError "encoder NAL length size differs from source")
-        let switchTo := if o.inband && active.map (·.data) != some eps.data then some eps else none
-        let (es, ee) := if o.inband then (entries, e) else addEntry entries et.entries
-        entries := es
-        for k in [0:et.samples.size] do
-          let s := et.samples[k]!
-          let pre := if k == 0 then switchTo.getD ByteArray.empty else ByteArray.empty
-          let os : OutSample := { inband := pre, src := ei, offset := s.offset, size := s.size, sync := s.sync, entry := ee, disp := base + a - c.inF + k }
-          samples := samples.push os
-        if switchTo.isSome then active := switchTo
-        encoded := encoded + run.length
+      let (switchTo, entry) ← match seg with
+        | .copy _ =>
+          if o.inband && t.entries.data != entries[0]!.data && srcSets.isNone then
+            throw (IO.userError s!"{c.path}: codec parameters differ from the first clip and cannot be switched in-band")
+          pure (if o.inband && srcSets.isSome && srcSets.map (·.data) != active.map (·.data) then srcSets else none, e)
+        | .encode _ =>
+          let ee := out.head!.data.entry
+          let (el, eps) ← liftE "encoder output" (avcParamSets ee)
+          if o.inband && lenSize != some el then throw (IO.userError "encoder NAL length size differs from source")
+          let (es, ee) := if o.inband then (entries, e) else addEntry entries ee
+          entries := es
+          pure (if o.inband && active.map (·.data) != some eps.data then some eps else none, ee)
+      let mut first := true
+      for p in out do
+        let pre := if first then switchTo.getD ByteArray.empty else ByteArray.empty
+        first := false
+        let d := p.data
+        let os : OutSample := { inband := pre, src := d.src, offset := d.offset, size := d.size, sync := d.sync, entry, disp := base + p.pts - c.inF }
+        samples := samples.push os
+      if switchTo.isSome then active := switchTo
+      if seg.isCopy then copied := copied + out.length else encoded := encoded + seg.frames.length
     base := base + (c.outF - c.inF)
   let some (ts, dur, w, h, _) := fmt | throw (IO.userError "no clips")
   writeFile outPath srcs { timescale := ts, dur, width := w, height := h, entries, samples }
@@ -207,12 +251,12 @@ def doPlan (tlPath : String) : IO Unit := do
   let mut out := #[]
   for c in tl do
     let (_, t) ← loadTrack c.path
-    let segs ← planClip c t
+    let segs ← planClip c t (toStream t)
     out := out.push (Json.mkObj [("path", toJson c.path), ("segments", Json.arr (segs.toArray.map segJson))])
   IO.println (Json.compress (Json.arr out))
 
 def usage : String :=
-  "usage: smartcut probe <file> | plan <timeline.json> | export <timeline.json> <out.mp4> [--encoder NAME] [--encoder-args \"...\"] [--ffmpeg PATH] [--strict] [--paramsets stsd|inband]"
+  "usage: vericut probe <file> | plan <timeline.json> | export <timeline.json> <out.mp4> [--encoder NAME] [--encoder-args \"...\"] [--ffmpeg PATH] [--strict] [--paramsets stsd|inband]"
 
 def main (args : List String) : IO UInt32 := do
   try

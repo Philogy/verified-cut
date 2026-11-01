@@ -1,4 +1,4 @@
-import SmartCut.Spec.Stream
+import VeriCut.Spec.Stream
 
 /-!
 # Spec: export plans and what a correct export means
@@ -12,7 +12,7 @@ promise closeness, so `approx` is a parameter. Nothing is assumed about it,
 except reflexivity where a theorem says so.
 -/
 
-namespace SmartCut
+namespace VeriCut
 
 /-- Pointwise relation between two lists of the same length. -/
 inductive AllRel {β γ : Type} (R : β → γ → Prop) : List β → List γ → Prop
@@ -59,8 +59,23 @@ plan order. -/
 def target (c : Codec α Pic) (s : Stream α) (plan : List Segment) : List Pic :=
   (plan.map fun seg => seg.frames.map (picture c s)).flatten
 
+/-- One re-encode request of a timeline: the frames of clip number `clip` that an
+`encode` segment lists (source decode-order indices, in display order). -/
+structure Job where
+  clip   : Nat
+  frames : List Nat
+  deriving Repr, BEq, DecidableEq, Inhabited
+
+/-- **Contract for one re-encode job** (trusted, not proven), the per-job form
+of `Encoder`: the result `out` for frames `ks` of source `s` is a well-formed,
+self-contained stream that decodes pointwise `approx`-close to those frames'
+source pictures. -/
+def JobContract (c : Codec α Pic) (approx : Pic → Pic → Prop) (s : Stream α)
+    (ks : List Nat) (out : Stream α) : Prop :=
+  out.WellFormed ∧ AllRel approx (decode c out) (ks.map (picture c s))
+
 /-- A plan may only copy dependency-closed packet sets. -/
 def PlanValid (s : Stream α) (plan : List Segment) : Prop :=
   ∀ ks, Segment.copy ks ∈ plan → CopySet s ks
 
-end SmartCut
+end VeriCut

@@ -1,7 +1,7 @@
-import SmartCut.Spec.Planner
-import SmartCut.Proofs.Decode
+import VeriCut.Spec.Planner
+import VeriCut.Proofs.Decode
 
-namespace SmartCut
+namespace VeriCut
 
 variable {α : Type} [Inhabited α]
 
@@ -68,4 +68,4 @@ theorem copyable_maximal (s : Stream α) (r : DisplayRange) (hwf : s.WellFormed)
   have hxi : x < i := hwf i hlt x hx'
   exact ⟨hxi, ih x hxi (hrefs x hx)⟩
 
-end SmartCut
+end VeriCut
