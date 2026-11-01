@@ -1,6 +1,7 @@
 import VeriCut.Spec.Audio
 import VeriCut.Flac.Write
 import VeriCut.Flac.Lpc
+import VeriCut.Flac.Md5
 
 /-!
 The encoder: choose a `Stream` for the samples, then write it.
@@ -270,7 +271,7 @@ def encode (st : Settings) (x : Pcm) : ByteArray :=
     minBlockSize := st.clampedBlockSize, maxBlockSize := st.clampedBlockSize,
     minFrameSize := fitFrameSize minSize, maxFrameSize := fitFrameSize maxSize,
     sampleRate := f.sampleRate, channels := f.channels, bitsPerSample := f.bitsPerSample,
-    totalSamples := x.length, md5 := 0 }
+    totalSamples := x.length, md5 := Md5.ofSamples f.bitsPerSample x.samples % 2 ^ 128 }
   (writeHead info .empty).bytes ++ body
 
 end VeriCut.Flac

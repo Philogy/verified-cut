@@ -165,12 +165,12 @@ theorem decode_encode : decode (encode st x) = .ok x := by
     minBlockSize := st.clampedBlockSize, maxBlockSize := st.clampedBlockSize,
     minFrameSize := fitFrameSize minSize, maxFrameSize := fitFrameSize maxSize,
     sampleRate := x.format.sampleRate, channels := x.format.channels, bitsPerSample := x.format.bitsPerSample,
-    totalSamples := x.length, md5 := 0 }
+    totalSamples := x.length, md5 := Md5.ofSamples x.format.bitsPerSample x.samples % 2 ^ 128 }
   obtain ⟨wf, hsamples⟩ := planFrames_spec st x valid info rfl rfl rfl
   have hinfo : info.WF :=
     ⟨⟨show st.clampedBlockSize < 2 ^ 16 by omega, show st.clampedBlockSize < 2 ^ 16 by omega⟩, ⟨fit _, fit _⟩,
       hR.2, hC, show 1 ≤ x.format.bitsPerSample ∧ x.format.bitsPerSample ≤ 32 by omega, hL,
-      show (0 : Nat) < 2 ^ 128 by decide⟩
+      Nat.mod_lt _ (by decide)⟩
   obtain ⟨p, hp⟩ := streamP_writeStream info (planFrames st x) hinfo wf
   rw [← encode_body st x info] at hp
   unfold decode

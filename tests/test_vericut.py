@@ -159,6 +159,10 @@ class Synthetic(unittest.TestCase):
             self.assertEqual(res["bytes"], os.path.getsize(out))
             # reference decoder (checks both CRCs and the stream structure)
             self.assertEqual(flac_decode_raw(out, bits), raw_of(samples, bits), f"flac -d of {out}")
+            # and the STREAMINFO MD5 (flac -t fails on a mismatch, warns if it's unset)
+            t = run([FLAC, "-t", "-s", out], check=False)
+            self.assertEqual(t.returncode, 0, t.stderr.decode())
+            self.assertNotIn(b"MD5", t.stderr, f"flac -t of {out}")
             # our round trip
             back = tmp(f"{name}.l{level}.back.wav")
             vericut("decode", out, back)
