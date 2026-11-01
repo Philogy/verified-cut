@@ -40,16 +40,28 @@ def Settings.clampedBlockSize (st : Settings) : Nat := min (max st.blockSize 16)
 /-- Bits to Rice-code `count` values with zigzags summing to `sum`, roughly. -/
 def riceCost (sum count k : Nat) : Nat := count * (k + 1) + (sum >>> k)
 
-/-- The Rice parameter in `0..30` with the least estimated cost, and that cost. -/
-def bestRice (sum count : Nat) : Nat × Nat :=
-  (List.range 31).foldl (init := (0, riceCost sum count 0)) fun best k =>
-    let c := riceCost sum count k
-    if c < best.2 then (k, c) else best
+/-- The least `k ≤ 30` with `count * 2 ^ k ≥ sum`, libFLAC's estimate of the best parameter. -/
+def riceGuess (sum count : Nat) (k : Nat := 0) : Nat :=
+  if 30 ≤ k || sum ≤ (count.toUInt64 <<< k.toUInt64).toNat then k else riceGuess sum count (k + 1)
+termination_by 30 - k
+decreasing_by simp_all; omega
 
-def zigzagSum (r : Array Int) (start stop : Nat) : Nat := Id.run do
-  let mut s := 0
-  for i in [start:stop] do s := s + zigzag r[i]!
-  return s
+/-- The Rice parameter in `0..30` with the least estimated cost near the guess, and that cost. -/
+def bestRice (sum count : Nat) : Nat × Nat :=
+  let k := min (riceGuess sum count) 30
+  [k - 1, k + 1].foldl (init := (k, riceCost sum count k)) fun best j =>
+    if j < 31 then
+      let c := riceCost sum count j
+      if c < best.2 then (j, c) else best
+    else best
+
+/-- Sum of the zigzagged values `r[start:stop]`, in `UInt64` (only used to choose). -/
+def zigzagSum (r : Array Int) (start stop : Nat) (acc : UInt64 := 0) : Nat :=
+  if h : start < stop ∧ start < r.size then
+    let v := r[start].toInt64
+    zigzagSum r (start + 1) stop (acc + ((v <<< 1) ^^^ (v >>> 63)).toUInt64)
+  else acc.toNat
+termination_by stop - start
 
 /-- Partition `j` of `2 ^ p` over a block of `n`, minus the warm-up samples. -/
 def partBounds (n warmup p j : Nat) : Nat × Nat :=
@@ -102,6 +114,24 @@ def planResidual (maxOrder n warmup : Nat) (r : Array Int) : Residual × Nat :=
 def residualOf (coefs : Array Int) (shift : Nat) (s : Array Int) (order : Nat) : Array Int :=
   .ofFn (n := s.size - order) fun i => s[order + i.1]! - predict coefs shift s (order + i.1)
 
+/-- `dot` in `Int64`. -/
+def dot64 (coefs : Array Int64) (s : Array Int) (i : Nat) : Nat → Int64 → Int64
+  | 0, acc => acc
+  | j + 1, acc => dot64 coefs s i j (acc + coefs[j]! * s[i - 1 - j]!.toInt64)
+
+-- A top-level constant: a `Nat` literal of 2 ^ 32 or more inside a loop is parsed from a
+-- string on every iteration.
+@[noinline] def sampleLimit : Nat := 2 ^ 36
+
+/-- `residualOf` (`residual_eq`), in `Int64` when no sum can overflow: at most 32 coefficients
+under `2 ^ 20` and samples under `2 ^ 36` in magnitude. -/
+def residual (coefs : Array Int) (shift : Nat) (s : Array Int) (order : Nat) : Array Int :=
+  let lc : Nat := 2 ^ 20
+  if coefs.size ≤ 32 && coefs.all (·.natAbs < lc) && s.all (·.natAbs < sampleLimit) then
+    let c := coefs.map Int.toInt64
+    .ofFn (n := s.size - order) fun i => s[order + i.1]! - ((dot64 c s (order + i.1) c.size 0).toInt >>> shift)
+  else residualOf coefs shift s order
+
 @[inline] def abs64 (v : Int64) : Int64 := if v < 0 then -v else v
 
 /-- From sample `i` on: `p1` is the previous sample, `d1 d2 d3` its residuals at orders 1 to 3,
@@ -150,7 +180,7 @@ def lpcBody (st : Settings) (bits : Nat) (s : Array Int) (c : Nat × Nat × Arra
   let order := coefs.size
   if 1 ≤ order && order ≤ 32 && order ≤ n && 1 ≤ precision && precision ≤ 15 && shift < 16 &&
       coefs.all (inRange precision) then
-    let r := residualOf coefs shift s order
+    let r := residual coefs shift s order
     let lim : Nat := 2 ^ 30
     if r.all (·.natAbs < lim) then
       let res := planResidual (min st.maxPartitionOrder 15) n order r
@@ -164,7 +194,7 @@ def planBody (st : Settings) (ws : List FloatArray) (bits : Nat) (s : Array Int)
   let verbatim := (Body.verbatim s, n * bits)
   let k := bestFixedOrder st.maxFixedOrder n s
   let fixed := if k ≤ n then
-      let res := planResidual (min st.maxPartitionOrder 15) n k (residualOf (fixedCoefs k) 0 s k)
+      let res := planResidual (min st.maxPartitionOrder 15) n k (residual (fixedCoefs k) 0 s k)
       [(Body.fixed (s.extract 0 k) res.1, k * bits + res.2)]
     else []
   let lpcs := (Lpc.candidates bits st.maxLpcOrder ws s).filterMap (lpcBody st bits s)

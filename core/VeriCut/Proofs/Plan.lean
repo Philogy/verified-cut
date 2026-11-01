@@ -13,11 +13,12 @@ theorem foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β) (l : L
 
 theorem bestRice_lt (sum count : Nat) : (bestRice sum count).1 < 31 := by
   unfold bestRice
-  refine foldl_inv (fun b : Nat × Nat => b.1 < 31) _ _ _ (by simp) ?_
+  refine foldl_inv (fun b : Nat × Nat => b.1 < 31) _ _ _ (by simp; omega) ?_
   intro b k hk hb
-  simp only [List.mem_range] at hk
   simp only
-  split <;> simp_all
+  split
+  · split <;> simp_all
+  · exact hb
 
 /-! ## Residual partitions -/
 
@@ -157,7 +158,7 @@ theorem lpcBody_ok (st : Settings) (bits : Nat) (s : Array Int) (hr : ∀ v ∈ 
     (c : Nat × Nat × Array Int) (b : Body × Nat) (h : lpcBody st bits s c = some b) : BodyOk bits s b := by
   obtain ⟨precision, shift, coefs⟩ := c
   unfold lpcBody at h
-  simp only at h
+  simp only [residual_eq] at h
   split at h
   · rename_i hg
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hg
@@ -188,11 +189,11 @@ theorem planBody_spec (st : Settings) (ws : List FloatArray) (bits : Nat) (s : A
   have fixed : ∀ c ∈ (if bestFixedOrder st.maxFixedOrder s.size s ≤ s.size then
       [(Body.fixed (s.extract 0 (bestFixedOrder st.maxFixedOrder s.size s))
         (planResidual (min st.maxPartitionOrder 15) s.size (bestFixedOrder st.maxFixedOrder s.size s)
-          (residualOf (fixedCoefs (bestFixedOrder st.maxFixedOrder s.size s)) 0 s
+          (residual (fixedCoefs (bestFixedOrder st.maxFixedOrder s.size s)) 0 s
             (bestFixedOrder st.maxFixedOrder s.size s))).1,
         bestFixedOrder st.maxFixedOrder s.size s * bits +
           (planResidual (min st.maxPartitionOrder 15) s.size (bestFixedOrder st.maxFixedOrder s.size s)
-            (residualOf (fixedCoefs (bestFixedOrder st.maxFixedOrder s.size s)) 0 s
+            (residual (fixedCoefs (bestFixedOrder st.maxFixedOrder s.size s)) 0 s
               (bestFixedOrder st.maxFixedOrder s.size s))).2)] else []), BodyOk bits s c := by
     generalize bestFixedOrder st.maxFixedOrder s.size s = k at hk4 ⊢
     split
@@ -200,6 +201,7 @@ theorem planBody_spec (st : Settings) (ws : List FloatArray) (bits : Nat) (s : A
       intro c hc
       simp only [List.mem_singleton] at hc
       subst hc
+      simp only [residual_eq]
       have hsize : (s.extract 0 k).size = k := by simp [Array.size_extract]; omega
       obtain ⟨hvals, hwf⟩ := planResidual_spec (min st.maxPartitionOrder 15) s.size k
         (residualOf (fixedCoefs k) 0 s k) (by omega) hkn (size_residualOf _ _ _ _)
