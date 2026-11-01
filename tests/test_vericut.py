@@ -315,6 +315,16 @@ class Cli(unittest.TestCase):
         vericut("encode", w, f)
         self.assertEqual(vericut("peaks", f, "3"), p)
 
+    def test_peaks_wav_matches_flac(self):
+        # WAV peaks read the bytes directly; FLAC peaks go through the decoder
+        for bits in (8, 12, 16, 20, 24, 32):
+            for ch in (1, 2, 3):
+                with self.subTest(bits=bits, channels=ch):
+                    w, f = tmp(f"pk{bits}_{ch}.wav"), tmp(f"pk{bits}_{ch}.flac")
+                    write_wav(w, synth("noise", 3000, ch, bits), 44100, ch, bits)
+                    vericut("encode", w, f)
+                    self.assertEqual(vericut("peaks", w, "37"), vericut("peaks", f, "37"))
+
     def test_peaks_count(self):
         # the app asks for min(samples / 32, 100000) buckets; the count must be exact for any request
         w = tmp("peaks_count.wav")
