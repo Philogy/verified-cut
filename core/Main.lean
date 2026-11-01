@@ -117,19 +117,36 @@ def exportCmd (timeline out : String) (st : Flac.Settings) : IO Unit := do
   let t0 ← IO.monoMsNow
   let j ← liftE timeline (Json.parse (← IO.FS.readFile timeline))
   let entries ← liftE timeline (parseTimeline j)
-  let mut cache : Std.HashMap String Pcm := {}
+  -- WAV clips load only their own frames (an hour-long source would otherwise be parsed whole);
+  -- FLAC sources are decoded once. Either way each clip is a valid `Clip` for `export_correct`.
+  let mut files : Std.HashMap String ByteArray := {}
+  let mut flacs : Std.HashMap String Pcm := {}
   let mut clips := #[]
   for e in entries do
-    let src ← match cache[e.src]? with
-      | some x => pure x
-      | none => do
-        let x ← load e.src
+    let d ← match files[e.src]? with
+      | some d => pure d
+      | none => IO.FS.readBinFile e.src
+    files := files.insert e.src d
+    let (src, start) ← if isFlac d then do
+        let x ← match flacs[e.src]? with
+          | some x => pure x
+          | none => do
+            let x ← liftE e.src (Flac.decode d)
+            liftE e.src x.validate
+            pure x
+        flacs := flacs.insert e.src x
+        pure (x, e.start)
+      else do
+        let (_, _, frames) ← liftE e.src (Wav.header d)
+        unless e.start ≤ e.stop ∧ e.stop ≤ frames do
+          throw (IO.userError s!"{e.src}: range [{e.start}, {e.stop}) outside 0..{frames}")
+        let x ← liftE e.src (Wav.parseFrames d e.start (e.stop - e.start))
         liftE e.src x.validate
-        pure x
-    cache := cache.insert e.src src
-    unless e.start ≤ e.stop ∧ e.stop ≤ src.length do
+        pure (x, 0)
+    let stop := start + (e.stop - e.start)
+    unless e.start ≤ e.stop ∧ stop ≤ src.length do
       throw (IO.userError s!"{e.src}: range [{e.start}, {e.stop}) outside 0..{src.length}")
-    clips := clips.push (⟨src, e.start, e.stop⟩ : Clip)
+    clips := clips.push (⟨src, start, stop⟩ : Clip)
   let format ← match clips[0]? with
     | some c => pure c.src.format
     | none => throw (IO.userError "timeline has no clips")

@@ -58,19 +58,23 @@ def header (d : ByteArray) : Except String (Format × Nat × Nat) := do
   if f.bits < 4 || f.bits > 32 then throw s!"unsupported WAV sample size {f.bits}"
   pure (⟨f.sampleRate, f.channels, f.bits⟩, start, (stop - start) / ((f.bits + 7) / 8 * f.channels))
 
-def parse (d : ByteArray) : Except String Pcm := do
-  if d.size < 12 || tag d 0 != "RIFF" || tag d 8 != "WAVE" then throw "not a WAV file"
-  let (f, start, stop) ← chunks d 12 none d.size
-  if f.channels = 0 then throw "WAV with no channels"
-  if f.bits < 4 || f.bits > 32 then throw s!"unsupported WAV sample size {f.bits}"
-  let bytes := (f.bits + 7) / 8
+/-- Frames `first` to `first + count` (clamped to the file), all channels interleaved. -/
+def parseFrames (d : ByteArray) (first count : Nat) : Except String Pcm := do
+  let (f, start, frames) ← header d
+  let bytes := (f.bitsPerSample + 7) / 8
   -- Narrower samples are left-justified in their container.
-  let shift := 8 * bytes - f.bits
-  let count := (stop - start) / (bytes * f.channels) * f.channels
-  let mut s := Array.emptyWithCapacity count
-  for k in [0:count] do
-    s := s.push (sampleAt d bytes (start + k * bytes) / 2 ^ shift)
-  return ⟨⟨f.sampleRate, f.channels, f.bits⟩, s⟩
+  let shift := 8 * bytes - f.bitsPerSample
+  let first := min first frames
+  let n := (min count (frames - first)) * f.channels
+  let at0 := start + first * f.channels * bytes
+  let mut s := Array.emptyWithCapacity n
+  for k in [0:n] do
+    s := s.push (sampleAt d bytes (at0 + k * bytes) / 2 ^ shift)
+  return ⟨f, s⟩
+
+def parse (d : ByteArray) : Except String Pcm := do
+  let (_, _, frames) ← header d
+  parseFrames d 0 frames
 
 def pushLE (d : ByteArray) (bytes v : Nat) : ByteArray := Id.run do
   let mut d := d
