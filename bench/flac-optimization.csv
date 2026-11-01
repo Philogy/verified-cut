@@ -106,3 +106,21 @@ ref,2026-11-01T15:23:11,reference baseline,forest,flac,7,0.046,0.024,2,1082004,0
 95565b4,2026-11-01T15:24:54,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,7,0.555,0.130,66,1074813,0.1846
 95565b4,2026-11-01T15:25:00,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,8,0.991,0.130,66,1073203,0.1844
 95565b4,2026-11-01T15:26:14,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),podcast,vericut,5,52.706,11.324,3534,131356914,0.2029
+25822b5,2026-11-01T15:39:50,reserve output ByteArray,piano,vericut,0,0.610,0.305,92,4329538,0.4044
+25822b5,2026-11-01T15:39:53,reserve output ByteArray,piano,vericut,1,0.730,0.318,93,4320385,0.4035
+25822b5,2026-11-01T15:39:57,reserve output ByteArray,piano,vericut,2,0.750,0.316,93,4320385,0.4035
+25822b5,2026-11-01T15:40:01,reserve output ByteArray,piano,vericut,3,1.062,0.313,94,4041199,0.3774
+25822b5,2026-11-01T15:40:05,reserve output ByteArray,piano,vericut,4,1.121,0.324,94,3989227,0.3726
+25822b5,2026-11-01T15:40:10,reserve output ByteArray,piano,vericut,5,1.131,0.321,94,3989000,0.3726
+25822b5,2026-11-01T15:40:15,reserve output ByteArray,piano,vericut,6,1.153,0.320,94,3988999,0.3726
+25822b5,2026-11-01T15:40:20,reserve output ByteArray,piano,vericut,7,1.292,0.347,94,3930436,0.3671
+25822b5,2026-11-01T15:40:28,reserve output ByteArray,piano,vericut,8,2.293,0.345,95,3923398,0.3664
+25822b5,2026-11-01T15:40:29,reserve output ByteArray,forest,vericut,0,0.321,0.187,67,3011386,0.5173
+25822b5,2026-11-01T15:40:31,reserve output ByteArray,forest,vericut,1,0.337,0.124,66,1515732,0.2604
+25822b5,2026-11-01T15:40:33,reserve output ByteArray,forest,vericut,2,0.341,0.129,66,1515732,0.2604
+25822b5,2026-11-01T15:40:35,reserve output ByteArray,forest,vericut,3,0.483,0.121,67,1139642,0.1958
+25822b5,2026-11-01T15:40:37,reserve output ByteArray,forest,vericut,4,0.509,0.125,67,1085105,0.1864
+25822b5,2026-11-01T15:40:39,reserve output ByteArray,forest,vericut,5,0.522,0.123,67,1085094,0.1864
+25822b5,2026-11-01T15:40:41,reserve output ByteArray,forest,vericut,6,0.528,0.127,67,1085103,0.1864
+25822b5,2026-11-01T15:40:43,reserve output ByteArray,forest,vericut,7,0.553,0.127,67,1074813,0.1846
+25822b5,2026-11-01T15:40:46,reserve output ByteArray,forest,vericut,8,0.964,0.129,67,1073203,0.1844
