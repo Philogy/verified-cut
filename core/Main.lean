@@ -91,18 +91,47 @@ def defaultArgs : String → Array String
   | "h264_videotoolbox" => #["-q:v", "75", "-bf", "0", "-allow_sw", "0"]
   | _ => #["-bf", "0"]
 
-/-- Re-encode display frames `[a, b]` of `src` with an ffmpeg encoder.
-This is the only place pixels are touched. The encoder is trusted (`Encoder`
-contract in `Spec/Export.lean`), and the result is checked to have the right
-frame count, codec and no reordering. -/
-def encodeRange (o : Opts) (src : String) (codec : String) (a b : Nat) (tmp : String) :
-    IO (ByteArray × VideoTrack) := do
+/-- Where `encodeRange` starts decoding: the display rank `rank` of a sync
+sample and its presentation time `us` in microseconds, rounded down. -/
+structure Seek where
+  us   : Nat
+  rank : Nat
+
+/-- The seek point for re-encoding samples `frames` of `t`: the last sync sample
+at or before the first of them in decode order. Decoding from there yields
+exactly the frames of display rank `≥ ranks[k]`, in order (the bridge's
+assumption that a sync sample resets the decoder). `none` (decode from the
+start) if the demuxer, which seeks by decode time, could land past it. -/
+def seekFor (t : VideoTrack) (ranks : Array Nat) (frames : List Nat) : Option Seek := do
+  let lo := frames.foldl min (frames.head?.getD 0)
+  let k ← (List.range (lo + 1)).reverse.find? (t.samples[·]!.sync)
+  let cts := t.samples[k]!.cts
+  guard (0 ≤ cts)
+  guard <| (t.samples.extract (k + 1) t.samples.size).all fun s => !s.sync || cts < s.dts
+  -- Rounding down keeps the seek at or before sample `k`; the previous frame is a
+  -- whole frame earlier, so ffmpeg's accurate seek drops it.
+  pure { us := cts.toNat * 1000000 / t.timescale, rank := ranks[k]! }
+
+/-- Re-encode display frames `[a, b]` of `src` with an ffmpeg encoder, decoding
+from `seek`. This is the only place pixels are touched. The encoder is trusted
+(`Encoder` contract in `Spec/Export.lean`), and the result is checked to have
+the right frame count, codec and no reordering. -/
+def encodeRange (o : Opts) (src : String) (codec : String) (a b : Nat) (seek : Option Seek)
+    (tmp : String) : IO (ByteArray × VideoTrack) := do
   let enc := o.encoder.getD "libx264"
   let extra := if o.encoderArgs.isEmpty then defaultArgs enc else o.encoderArgs
+  -- `-seek_timestamp 1`: `-ss` is the stream timestamp, not relative to the
+  -- file's start time (which other tracks, e.g. audio, can move).
+  let (ss, r0) := match seek with
+    | some s => (#["-seek_timestamp", "1", "-ss",
+        s!"{s.us / 1000000}.{(toString (s.us % 1000000 + 1000000)).drop 1}"], s.rank)
+    | none => (#[], 0)
   let run := fun (sync : Array String) => IO.Process.output {
     cmd := o.ffmpeg,
-    args := #["-v", "error", "-y", "-ignore_editlist", "1", "-i", src, "-map", "0:v:0", "-an",
-      "-vf", s!"select=between(n\\,{a}\\,{b}),setpts=N/FRAME_RATE/TB"] ++ sync ++
+    args := #["-v", "error", "-y", "-ignore_editlist", "1"] ++ ss ++ #["-i", src,
+      "-map", "0:v:0", "-an",
+      "-vf", s!"select=between(n\\,{a - r0}\\,{b - r0}),setpts=N/FRAME_RATE/TB",
+      "-frames:v", toString (b + 1 - a)] ++ sync ++
       #["-c:v", enc] ++ extra ++ #["-f", "mp4", tmp] }
   let mut out ← run #["-fps_mode", "passthrough"]
   if out.exitCode != 0 then out ← run #["-vsync", "0"]
@@ -155,7 +184,7 @@ instance : MonadEncode Pkt ExportM where
     let a := lc.ranks[j.frames.head!]!
     let b := lc.ranks[j.frames.getLast!]!
     let tmp := s!"{(← IO.getEnv "TMPDIR").getD "/tmp"}/vericut_{(← IO.monoNanosNow)}_{j.clip}_{a}.mp4"
-    let (eb, et) ← encodeRange o c.path lc.track.codec a b tmp
+    let (eb, et) ← encodeRange o c.path lc.track.codec a b (seekFor lc.track lc.ranks j.frames) tmp
     IO.FS.removeFile tmp
     let srcs ← get
     set (srcs.push eb)
