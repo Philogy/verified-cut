@@ -108,6 +108,11 @@ def synth(kind, n, channels, bits, seed=0):
                 v = (rnd.randint(lo, hi) >> 3) << 3
             elif kind == "steps":  # mostly constant blocks with a few jumps
                 v = ((i // 3000) * 1234 + c * 77) % hi
+            elif kind == "chirp":  # three sweeping partials and a little noise
+                import math
+                t = i / 44100
+                v = int(hi * 0.25 * (math.sin(2 * math.pi * (200 + 800 * t) * t) + math.sin(2 * math.pi * (1500 + 300 * c) * t)
+                                     + 0.5 * math.sin(2 * math.pi * 5000 * t)) + rnd.randint(-40, 40))
             out.append(v)
     return out
 
@@ -132,6 +137,9 @@ CASES = [
     ("noise", 17, 2, 16, 44100),
     ("tone", 5000, 2, 16, 12345),  # rate with no frame header code
     ("silence", 0, 2, 16, 44100),
+    ("tone", 3000, 2, 32, 48000),
+    ("noise", 2000, 1, 32, 48000),
+    ("chirp", 30000, 2, 16, 44100),  # wants high-order linear prediction
 ]
 
 
@@ -180,6 +188,53 @@ def real_clips():
         return []
     names = sorted(f for f in os.listdir(AUDIO) if f.endswith(".wav") and not f.endswith(".orig.wav"))
     return [os.path.join(AUDIO, f) for f in names if LONG or os.path.getsize(os.path.join(AUDIO, f)) < 100_000_000]
+
+
+def subframe_types(path):
+    """Counts of subframe types in a FLAC file, from `flac --analyze`."""
+    ana = tmp(os.path.basename(path) + ".ana")
+    run([FLAC, "-s", "-f", "-a", "-o", ana, path])
+    counts = {}
+    with open(ana) as f:
+        for line in f:
+            for word in line.split():
+                if word.startswith("type="):
+                    counts[word[5:]] = counts.get(word[5:], 0) + 1
+    return counts
+
+
+class Lpc(unittest.TestCase):
+    """Linear prediction: used from level 3 on, never at 0-2, smaller than fixed predictors,
+    and every candidate decodes bit-exact (the synthetic cases check that at each level)."""
+
+    def test_levels(self):
+        samples = synth("chirp", 30000, 2, 16)
+        wav = tmp("lpc_chirp.wav")
+        write_wav(wav, samples, 44100, 2, 16)
+        sizes = {}
+        for level in (0, 2, 3, 5, 8):
+            out = tmp(f"lpc_chirp.l{level}.flac")
+            vericut("encode", wav, out, "--level", str(level))
+            types = subframe_types(out)
+            if level < 3:
+                self.assertNotIn("LPC", types, f"level {level}")
+            else:
+                self.assertGreater(types.get("LPC", 0), 0, f"level {level}")
+            self.assertEqual(flac_decode_raw(out, 16), raw_of(samples, 16))
+            sizes[level] = os.path.getsize(out)
+        self.assertLess(sizes[5], sizes[2])
+        self.assertLessEqual(sizes[8], sizes[5])
+
+    def test_close_to_libflac(self):
+        # within 1% of libFLAC's size at -5 and -8 on a signal LPC is made for
+        samples = synth("chirp", 60000, 2, 16, seed=1)
+        wav = tmp("lpc_chirp2.wav")
+        write_wav(wav, samples, 44100, 2, 16)
+        for level in (5, 8):
+            ours, ref = tmp(f"lpc2.l{level}.flac"), tmp(f"lpc2.ref{level}.flac")
+            vericut("encode", wav, ours, "--level", str(level))
+            run([FLAC, "-s", "-f", f"-{level}", "-o", ref, wav])
+            self.assertLess(os.path.getsize(ours), os.path.getsize(ref) * 1.01, f"level {level}")
 
 
 class RealClips(unittest.TestCase):

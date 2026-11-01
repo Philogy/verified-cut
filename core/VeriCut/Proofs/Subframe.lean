@@ -29,7 +29,10 @@ def Body.WF (bits n : Nat) : Body → Prop
   | .constant v => InRange bits v
   | .verbatim s => s.size = n ∧ ∀ v ∈ s, InRange bits v
   | .fixed warmup r => warmup.size ≤ 4 ∧ warmup.size ≤ n ∧ (∀ v ∈ warmup, InRange bits v) ∧ r.WF n warmup.size
-  | .lpc .. => False
+  | .lpc precision shift coefs warmup r =>
+    1 ≤ precision ∧ precision ≤ 15 ∧ shift < 16 ∧ coefs.size = warmup.size ∧ 1 ≤ warmup.size ∧
+      warmup.size ≤ 32 ∧ warmup.size ≤ n ∧ (∀ c ∈ coefs, InRange precision c) ∧
+      (∀ v ∈ warmup, InRange bits v) ∧ r.WF n warmup.size
 
 structure Subframe.WF (bits n : Nat) (sf : Subframe) : Prop where
   wasted : sf.wasted < bits
@@ -100,7 +103,24 @@ theorem roundTrip_body (bits n : Nat) (hb : 0 < bits) (b : Body) (h : b.WF bits 
     rt roundTrip_residual n warmup.size r hr
     · exact RoundTrip.pure' (by simp)
     rt_rfl
-  | lpc => exact h.elim
+  | lpc precision shift coefs warmup r =>
+    obtain ⟨hp1, hp15, hsh, hcw, ho1, ho32, hn, hc, hw, hr⟩ := h
+    simp only [Body.typeCode, if_neg (by omega : 31 + coefs.size ≠ 0), if_neg (by omega : 31 + coefs.size ≠ 1),
+      if_neg (by omega : ¬(8 ≤ 31 + coefs.size ∧ 31 + coefs.size ≤ 12)), if_pos (by omega : 32 ≤ 31 + coefs.size),
+      show 31 + coefs.size - 31 = coefs.size by omega]
+    rt RoundTrip.check _ (by simpa using (show coefs.size ≤ n by omega))
+    rt roundTrip_samples bits hb warmup hw #[] coefs.size hcw
+    rt RoundTrip.readBits 4 (precision - 1) (by omega)
+    rt RoundTrip.check _ (by simpa using (show precision - 1 < 15 by omega))
+    rt RoundTrip.readSigned 5 (shift : Int) (by constructor <;> simp <;> omega) (by decide)
+    rt RoundTrip.check _ (by simp)
+    rt roundTrip_samples (precision - 1 + 1) (by omega) coefs
+      (by rw [show precision - 1 + 1 = precision by omega]; exact hc) #[] coefs.size rfl
+    rt roundTrip_residual n coefs.size r (hcw ▸ hr)
+    · exact RoundTrip.pure' (by simp; omega)
+    rt_rfl
+    intro w
+    simp only [writeBody, show precision - 1 + 1 = precision by omega, id]
 
 theorem roundTrip_wasted (k : Nat) :
     RoundTrip (fun w => if k = 0 then w.write 1 0 else ((w.write 1 1).zeros (k - 1)).write 1 1) wastedP k := by

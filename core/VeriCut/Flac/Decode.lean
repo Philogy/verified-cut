@@ -18,8 +18,10 @@ def streamSamplesP : Parser (StreamInfo × Array Int) := do
   let head ← streamHeadP
   let d ← data
   skipMetadata d.size head.1
-  -- Capacity is not observable; it only saves regrowing the output. Capped against lying headers.
-  let samples ← framesSamplesP head.2 d.size (.emptyWithCapacity (min (head.2.totalSamples * head.2.channels) (2 ^ 28)))
+  -- Capacity is not observable; it only saves regrowing the output. Capped against lying headers
+  -- by what the data could hold (a constant subframe codes 65535 samples in a few bytes).
+  let cap := min (head.2.totalSamples * head.2.channels) (8192 * d.size + 65536)
+  let samples ← framesSamplesP head.2 d.size (.emptyWithCapacity cap)
   pure (head.2, samples)
 
 def decode (d : ByteArray) : Except String Pcm := do

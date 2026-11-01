@@ -1,5 +1,6 @@
 import VeriCut.Spec.Audio
 import VeriCut.Flac.Write
+import VeriCut.Flac.Lpc
 
 /-!
 The encoder: choose a `Stream` for the samples, then write it.
@@ -14,18 +15,25 @@ namespace VeriCut.Flac
 structure Settings where
   blockSize : Nat := 4096
   maxFixedOrder : Nat := 4
+  /-- Highest linear predictor order tried; 0 for fixed predictors only. -/
+  maxLpcOrder : Nat := 8
+  /-- Tukey window parameters to try for linear prediction, each giving one candidate. -/
+  windows : List Float := [0.5]
   maxPartitionOrder : Nat := 5
   /-- Try left/side, right/side and mid/side on stereo frames. -/
   stereo : Bool := true
   deriving Repr, Inhabited
 
-/-- Roughly `flac -N`, with fixed predictors only. -/
+/-- Roughly `flac -N`. -/
 def Settings.level : Nat → Settings
-  | 0 => { blockSize := 1152, maxPartitionOrder := 3, stereo := false }
-  | 1 | 2 => { blockSize := 1152, maxPartitionOrder := 3 }
-  | 3 | 4 => { maxPartitionOrder := 4 }
+  | 0 => { blockSize := 1152, maxLpcOrder := 0, maxPartitionOrder := 3, stereo := false }
+  | 1 | 2 => { blockSize := 1152, maxLpcOrder := 0, maxPartitionOrder := 3 }
+  | 3 => { maxLpcOrder := 6, maxPartitionOrder := 4 }
+  | 4 => { maxPartitionOrder := 4 }
   | 5 => {}
-  | _ => { maxPartitionOrder := 6 }
+  | 6 => { maxPartitionOrder := 6 }
+  | 7 => { maxLpcOrder := 12, maxPartitionOrder := 6 }
+  | _ => { maxLpcOrder := 12, windows := [0.5, 0.1, 0.9], maxPartitionOrder := 6 }
 
 def Settings.clampedBlockSize (st : Settings) : Nat := min (max st.blockSize 16) 65535
 
@@ -129,15 +137,38 @@ def bestFixedOrder (maxOrder n : Nat) (s : Array Int) : Nat :=
   (List.range (min maxOrder 4 + 1)).foldl (init := 0) fun best k =>
     if k ≤ n && sums[k]! < sums[best]! then k else best
 
-def planBody (st : Settings) (bits : Nat) (s : Array Int) : Body × Nat :=
+/-- Fits in `bits`-bit two's complement. -/
+def inRange (bits : Nat) (v : Int) : Bool := decide (-2 ^ (bits - 1) ≤ v ∧ v < 2 ^ (bits - 1))
+
+/-- A linear-prediction body for the proposed `(precision, shift, coefs)`, if the format can
+carry it, and its estimated size. The residual must also fit in 31 bits for other decoders. -/
+def lpcBody (st : Settings) (bits : Nat) (s : Array Int) (c : Nat × Nat × Array Int) : Option (Body × Nat) :=
+  let precision := c.1
+  let shift := c.2.1
+  let coefs := c.2.2
+  let n := s.size
+  let order := coefs.size
+  if 1 ≤ order && order ≤ 32 && order ≤ n && 1 ≤ precision && precision ≤ 15 && shift < 16 &&
+      coefs.all (inRange precision) then
+    let r := residualOf coefs shift s order
+    let lim : Nat := 2 ^ 30
+    if r.all (·.natAbs < lim) then
+      let res := planResidual (min st.maxPartitionOrder 15) n order r
+      some (.lpc precision shift coefs (s.extract 0 order) res.1, order * (bits + precision) + 9 + res.2)
+    else none
+  else none
+
+/-- The cheapest of verbatim, the best fixed predictor and the proposed linear predictors. -/
+def planBody (st : Settings) (ws : List FloatArray) (bits : Nat) (s : Array Int) : Body × Nat :=
   let n := s.size
   let verbatim := (Body.verbatim s, n * bits)
   let k := bestFixedOrder st.maxFixedOrder n s
-  if k ≤ n then
-    let res := planResidual (min st.maxPartitionOrder 15) n k (residualOf (fixedCoefs k) 0 s k)
-    let fixed := (Body.fixed (s.extract 0 k) res.1, k * bits + res.2)
-    if fixed.2 < verbatim.2 then fixed else verbatim
-  else verbatim
+  let fixed := if k ≤ n then
+      let res := planResidual (min st.maxPartitionOrder 15) n k (residualOf (fixedCoefs k) 0 s k)
+      [(Body.fixed (s.extract 0 k) res.1, k * bits + res.2)]
+    else []
+  let lpcs := (Lpc.candidates bits st.maxLpcOrder ws s).filterMap (lpcBody st bits s)
+  (fixed ++ lpcs).foldl (fun best c => if c.2 < best.2 then c else best) verbatim
 
 def trailingZeros (g : Nat) : Nat :=
   if g = 0 then 0 else go g 0 64
@@ -147,29 +178,34 @@ where
     | fuel + 1 => if g % 2 = 0 then go (g / 2) (z + 1) fuel else z
 
 /-- A subframe for `s` (nonempty) at `bits` bits per sample, and its estimated size. -/
-def planSubframe (st : Settings) (bits : Nat) (s : Array Int) : Subframe × Nat :=
+def planSubframe (st : Settings) (ws : List FloatArray) (bits : Nat) (s : Array Int) : Subframe × Nat :=
   if s.all (· == s[0]!) then (⟨0, .constant s[0]!⟩, bits)
   else
     let w := min (trailingZeros (s.foldl (· ||| ·.natAbs) 0)) (bits - 1)
     -- Checked rather than proved: the round trip only needs the samples to be multiples.
     let wasted := if w ≠ 0 && (let m : Int := 2 ^ w; s.all (· % m == 0)) then w else 0
-    let body := planBody st (bits - wasted) (if wasted = 0 then s else s.map (· / 2 ^ wasted))
+    let body := planBody st ws (bits - wasted) (if wasted = 0 then s else s.map (· / 2 ^ wasted))
     (⟨wasted, body.1⟩, body.2 + wasted)
 
 /-- Channel `c` of the `n` frames from `offset` on. -/
 def channelBlock (x : Pcm) (offset n c : Nat) : Array Int :=
   .ofFn (n := n) fun i => x.samples[(offset + i.1) * x.format.channels + c]!
 
+/-- The LPC windows for a block of `n`, computed once per frame rather than per channel. -/
+def frameWindows (st : Settings) (n : Nat) : List FloatArray :=
+  if st.maxLpcOrder = 0 then [] else st.windows.map (Lpc.tukey n)
+
 def planFrame (st : Settings) (x : Pcm) (number offset n : Nat) : Frame :=
   let f := x.format
   let header channels : Header := ⟨n, f.sampleRate, f.bitsPerSample, channels, number⟩
   let blocks := (Array.range f.channels).map (channelBlock x offset n)
-  let plain := blocks.map (planSubframe st f.bitsPerSample)
+  let ws := frameWindows st n
+  let plain := blocks.map (planSubframe st ws f.bitsPerSample)
   if st.stereo && f.channels = 2 then
     let l := plain[0]!
     let r := plain[1]!
-    let side := planSubframe st (f.bitsPerSample + 1) (Array.zipWith (· - ·) blocks[0]! blocks[1]!)
-    let mid := planSubframe st f.bitsPerSample (Array.zipWith (fun a b => (a + b) / 2) blocks[0]! blocks[1]!)
+    let side := planSubframe st ws (f.bitsPerSample + 1) (Array.zipWith (· - ·) blocks[0]! blocks[1]!)
+    let mid := planSubframe st ws f.bitsPerSample (Array.zipWith (fun a b => (a + b) / 2) blocks[0]! blocks[1]!)
     let options := [(Channels.leftSide, l, side), (.rightSide, side, r), (.midSide, mid, side)]
     let best := options.foldl (init := (Channels.independent 2, l, r)) fun best o =>
       if o.2.1.2 + o.2.2.2 < best.2.1.2 + best.2.2.2 then o else best
