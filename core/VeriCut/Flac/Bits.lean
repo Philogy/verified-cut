@@ -116,6 +116,22 @@ def skip (k : Nat) : Parser Unit := fun d p =>
 /-- Skip to the next byte boundary. -/
 def align : Parser Unit := fun d p => skip ((8 - p % 8) % 8) d p
 
+/-- The first position from `p` on holding a one bit, or `8 * d.size` if there is none. Like
+`unaryAux` (`unaryAux_nextOne`) but returning a plain number, so nothing is allocated. -/
+def nextOne (d : ByteArray) (p : Nat) : Nat :=
+  if h : p / 8 < d.size then
+    if bitAt d p h = 1 then p else nextOne d (p + 1)
+  else 8 * d.size
+termination_by 8 * d.size - p
+decreasing_by omega
+
+/-- The `k` bits from `p` as a number after `acc` (bits past the end read as zero); the value of
+`readBitsAux` (`readBitsAux_bitsVal`). -/
+def bitsVal (d : ByteArray) : Nat → Nat → Nat → Nat
+  | 0, acc, _ => acc
+  | k + 1, acc, p =>
+    if h : p / 8 < d.size then bitsVal d k (2 * acc + bitAt d p h) (p + 1) else bitsVal d k (2 * acc) (p + 1)
+
 /-- Run `p` `k` times, appending the results to `acc`. -/
 def many (p : Parser α) : Nat → Array α → Parser (Array α)
   | 0, acc => pure acc

@@ -33,6 +33,68 @@ theorem unaryAux_eq (d : ByteArray) (q acc pos : Nat) (t : List Bool)
     simp only [h8, dite_true, this, if_false]
     rw [ih _ _ hr]; congr 2 <;> omega
 
+/-! ## The allocation-free Rice reader -/
+
+theorem le_nextOne (d : ByteArray) (p : Nat) (hp : p ≤ 8 * d.size) : p ≤ nextOne d p := by
+  induction p using nextOne.induct d with
+  | case1 p h hb => rw [nextOne]; simp [h, hb]
+  | case2 p h hb ih => rw [nextOne]; simp only [h, dite_true, hb, if_false]; have := ih (by omega); omega
+  | case3 p h => rw [nextOne]; simp [h]; omega
+
+theorem unaryAux_nextOne (d : ByteArray) (p q : Nat) :
+    unaryAux d p q = if nextOne d p < 8 * d.size then .ok (q + (nextOne d p - p), nextOne d p + 1)
+      else .error "unexpected end of stream" := by
+  induction p, q using unaryAux.induct d with
+  | case1 p q h hb =>
+    rw [unaryAux, nextOne]
+    simp only [h, dite_true, hb, if_true]
+    rw [if_pos (by omega)]; simp
+  | case2 p q h hb ih =>
+    rw [unaryAux, nextOne]
+    simp only [h, dite_true, hb, if_false, ih]
+    have : p + 1 ≤ nextOne d (p + 1) := le_nextOne d (p + 1) (by omega)
+    split <;> simp; omega
+  | case3 p q h =>
+    rw [unaryAux, nextOne]
+    simp [h]
+theorem readBitsAux_bitsVal (d : ByteArray) (k acc p : Nat) :
+    readBitsAux d k acc p = if k = 0 ∨ p + k ≤ 8 * d.size then .ok (bitsVal d k acc p, p + k)
+      else .error "unexpected end of stream" := by
+  induction k generalizing acc p with
+  | zero => simp [readBitsAux, bitsVal]
+  | succ k ih =>
+    rw [readBitsAux]
+    split
+    · rename_i h
+      rw [ih, bitsVal, dif_pos h]
+      by_cases hk : k = 0 ∨ p + 1 + k ≤ 8 * d.size
+      · rw [if_pos hk, if_pos (by omega)]; congr 2; omega
+      · rw [if_neg hk, if_neg (by omega)]
+    · rename_i h
+      rw [if_neg (by omega)]
+
+theorem ricesLoop_eq (d : ByteArray) (k : Nat) :
+    ∀ c acc p, ricesLoop d k c acc p = many (riceP k) c acc d p := by
+  intro c
+  induction c with
+  | zero => intro acc p; rfl
+  | succ c ih =>
+    intro acc p
+    show _ = Parser.bind (riceP k) (fun a => many (riceP k) c (acc.push a)) d p
+    simp only [ricesLoop, riceP, bind, Parser.bind, unary, readBits, unaryAux_nextOne, readBitsAux_bitsVal]
+    by_cases h1 : nextOne d p < 8 * d.size
+    · rw [if_pos h1, if_pos h1]
+      dsimp only
+      by_cases h2 : k = 0 ∨ nextOne d p + 1 + k ≤ 8 * d.size
+      · rw [if_pos h2, if_pos h2]
+        simp only [pure, Parser.pure, Nat.zero_add]
+        exact ih _ _
+      · rw [if_neg h2, if_neg h2]
+    · rw [if_neg h1, if_neg h1]
+
+theorem ricesP_eq (k c : Nat) (acc : Array Int) : ricesP k c acc = many (riceP k) c acc := by
+  funext d p; exact ricesLoop_eq d k c acc p
+
 theorem roundTrip_unary (q : Nat) : RoundTrip (fun w => (w.zeros q).write 1 1) unary q := by
   refine ⟨List.replicate q false ++ [true], fun w => by simp [write_bits, zeros_bits, natBits], ?_⟩
   intro d pos t h
