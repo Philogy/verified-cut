@@ -43,7 +43,7 @@ theorem roundTrip_partition (paramBits count : Nat) (p : Partition) (h : p.WF pa
   obtain ⟨⟨k, hk, hlt⟩, hsize⟩ := h
   unfold partitionP
   rt RoundTrip.readBits paramBits k (by omega)
-  · rw [if_neg (by omega), ricesP_eq]
+  · rw [if_neg (by omega)]
     rt RoundTrip.many' (xs := p.values.toList) (fun v _ => roundTrip_rice k v) #[] (by simp [hsize])
     · exact RoundTrip.pure' (by cases p; simp_all)
     · intro w; rfl

@@ -25,67 +25,6 @@ theorem frames_le_len (b len : Nat) (hb : 0 < b) : (len + b - 1) / b ≤ len := 
       rw [Nat.succ_mul]
     omega
 
-/-! ## Decoding a frame at a time is decoding the stream -/
-
-section
-open Parser
-
-theorem bind_ok' {α β : Type} {p : Parser α} {q : α → Parser β} {d : ByteArray} {pos p1 : Nat} {a : α}
-    (h : p d pos = .ok (a, p1)) : Parser.bind p q d pos = q a d p1 := by
-  simp [Parser.bind, h]
-
-theorem bind_error' {α β : Type} {p : Parser α} {q : α → Parser β} {d : ByteArray} {pos : Nat} {e : String}
-    (h : p d pos = .error e) : Parser.bind p q d pos = .error e := by
-  simp [Parser.bind, h]
-
-theorem framesSamplesP_eq (info : StreamInfo) : ∀ (fuel : Nat) (fs : Array Frame) (acc : Array Int) (d : ByteArray) (p : Nat),
-    framesSamplesP info fuel (fs.foldl (· ++ ·.samples) acc) d p =
-      match framesP info fuel fs d p with
-      | .ok (fs', p') => .ok (fs'.foldl (· ++ ·.samples) acc, p')
-      | .error e => .error e := by
-  intro fuel
-  induction fuel with
-  | zero => intro fs acc d p; rfl
-  | succ fuel ih =>
-    intro fs acc d p
-    simp only [framesSamplesP, framesP, bind, Parser.bind, atEnd]
-    split
-    · rfl
-    · cases h : frameP info d p with
-      | error e => rw [bind_error' h, bind_error' h]
-      | ok r =>
-        obtain ⟨f, p'⟩ := r
-        rw [bind_ok' h, bind_ok' h, ← ih (fs.push f) acc d p', Array.foldl_push]
-
-theorem streamSamplesP_eq (d : ByteArray) (pos : Nat) :
-    streamSamplesP d pos = match streamP d pos with
-      | .ok (s, p) => .ok ((s.info, s.samples), p)
-      | .error e => .error e := by
-  unfold streamSamplesP streamP
-  simp only [bind]
-  cases h1 : streamHeadP d pos with
-  | error e => rw [bind_error' h1, bind_error' h1]
-  | ok r =>
-    obtain ⟨head, p1⟩ := r
-    rw [bind_ok' h1, bind_ok' h1, bind_ok' (show data d p1 = .ok (d, p1) from rfl),
-      bind_ok' (show data d p1 = .ok (d, p1) from rfl)]
-    cases h2 : skipMetadata d.size head.1 d p1 with
-    | error e => rw [bind_error' h2, bind_error' h2]
-    | ok r =>
-      obtain ⟨_, p2⟩ := r
-      rw [bind_ok' h2, bind_ok' h2, Array.emptyWithCapacity_eq]
-      have := framesSamplesP_eq head.2 d.size #[] #[] d p2
-      simp only [Array.foldl_empty] at this
-      cases h3 : framesP head.2 d.size #[] d p2 with
-      | error e => rw [h3] at this; rw [bind_error' this, bind_error' h3]
-      | ok r =>
-        obtain ⟨fs, p3⟩ := r
-        rw [h3] at this
-        rw [bind_ok' this, bind_ok' h3]
-        rfl
-
-end
-
 section
 variable (st : Settings) (x : Pcm) (valid : x.Valid)
 include valid
@@ -126,31 +65,6 @@ theorem planFrames_spec (info : StreamInfo)
     rw [step K (Nat.le_refl _), Nat.min_eq_right (hK ▸ len_le_frames _ _ hb), ← size_eq_length_mul x valid,
       Array.extract_eq_self_of_le (Nat.le_refl _)]
 
-omit valid in
-theorem foldl_append_fst (g : Nat → ByteArray) (l : List Nat) (o : ByteArray) (lo hi : Nat) :
-    (l.foldl (init := (o, lo, hi)) fun (acc : ByteArray × Nat × Nat) k =>
-      (acc.1 ++ g k, if k = 0 then (g k).size else min acc.2.1 (g k).size, max acc.2.2 (g k).size)).1 =
-    l.foldl (fun out k => out ++ g k) o := by
-  induction l generalizing o lo hi with
-  | nil => rfl
-  | cons k l ih => exact ih _ _ _
-
-omit valid in
-theorem foldl_append_assoc (g : Nat → ByteArray) (l : List Nat) (a b : ByteArray) :
-    a ++ l.foldl (fun out k => out ++ g k) b = l.foldl (fun out k => out ++ g k) (a ++ b) := by
-  induction l generalizing b with
-  | nil => rfl
-  | cons k l ih => simp only [List.foldl_cons]; rw [ih, ByteArray.append_assoc]
-
-omit valid in
-/-- Writing frame by frame is writing the planned frames. -/
-theorem encode_body (info : StreamInfo) :
-    (writeHead info .empty).bytes ++ (encodeFrames st x).1 = writeStream info ((planFrames st x).map writeFrame) := by
-  unfold encodeFrames writeStream
-  rw [foldl_append_fst (encodeFrame st x), foldl_append_assoc, ByteArray.append_empty]
-  simp only [planFrames, Array.map_map, ← Array.foldl_toList, Array.toList_map, Array.toList_range, List.foldl_map]
-  rfl
-
 theorem decode_encode : decode (encode st x) = .ok x := by
   have hb' : st.clampedBlockSize ≤ 65535 := by unfold Settings.clampedBlockSize; omega
   have hC := valid.channels
@@ -158,23 +72,22 @@ theorem decode_encode : decode (encode st x) = .ok x := by
   have hR := valid.sampleRate
   have hL := valid.length
   dsimp only [encode]
-  generalize (encodeFrames st x).2.1 = minSize
-  generalize (encodeFrames st x).2.2 = maxSize
+  generalize hmax : ((planFrames st x).map writeFrame).foldl (max · ·.size) 0 = maxSize
+  generalize hmin : ((planFrames st x).map writeFrame).foldl (min · ·.size) maxSize = minSize
   have fit : ∀ v, fitFrameSize v < 2 ^ 24 := fun v => by unfold fitFrameSize; split <;> omega
   let info : StreamInfo := {
     minBlockSize := st.clampedBlockSize, maxBlockSize := st.clampedBlockSize,
     minFrameSize := fitFrameSize minSize, maxFrameSize := fitFrameSize maxSize,
     sampleRate := x.format.sampleRate, channels := x.format.channels, bitsPerSample := x.format.bitsPerSample,
-    totalSamples := x.length, md5 := Md5.ofSamples x.format.bitsPerSample x.samples % 2 ^ 128 }
+    totalSamples := x.length, md5 := 0 }
   obtain ⟨wf, hsamples⟩ := planFrames_spec st x valid info rfl rfl rfl
   have hinfo : info.WF :=
     ⟨⟨show st.clampedBlockSize < 2 ^ 16 by omega, show st.clampedBlockSize < 2 ^ 16 by omega⟩, ⟨fit _, fit _⟩,
       hR.2, hC, show 1 ≤ x.format.bitsPerSample ∧ x.format.bitsPerSample ≤ 32 by omega, hL,
-      Nat.mod_lt _ (by decide)⟩
+      show (0 : Nat) < 2 ^ 128 by decide⟩
   obtain ⟨p, hp⟩ := streamP_writeStream info (planFrames st x) hinfo wf
-  rw [← encode_body st x info] at hp
   unfold decode
-  rw [streamSamplesP_eq, hp]
+  rw [hp]
   simp only [bind, Except.bind]
   simp only [Stream.samples, hsamples]
   have hsz : info.totalSamples * info.channels = x.samples.size := (size_eq_length_mul x valid).symm

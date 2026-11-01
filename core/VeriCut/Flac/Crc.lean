@@ -18,16 +18,11 @@ where
 def crc8Table : Array Nat := crcTable 8 0x07
 def crc16Table : Array Nat := crcTable 16 0x8005
 
--- In `UInt32`, which stays unboxed in the loop. The final `%` never changes the value;
--- it saves proving the table entries fit.
-def crc8Table32 : Array UInt32 := crc8Table.map (·.toUInt32)
-def crc16Table32 : Array UInt32 := crc16Table.map (·.toUInt32)
-
+-- The final `%` never changes the value; it saves proving the table entries fit.
 def crc8 (d : ByteArray) : Nat :=
-  (d.foldl (fun (c : UInt32) b => crc8Table32[((c ^^^ b.toUInt32) &&& 0xFF).toNat]!) (0 : UInt32)).toNat % 256
+  d.foldl (fun c b => crc8Table[c ^^^ b.toNat]!) 0 % 256
 
 def crc16 (d : ByteArray) : Nat :=
-  (d.foldl (fun (c : UInt32) b => ((c <<< (8 : UInt32)) &&& (0xFFFF : UInt32)) ^^^ crc16Table32[(((c >>> (8 : UInt32)) ^^^ b.toUInt32) &&& 0xFF).toNat]!)
-    (0 : UInt32)).toNat % 65536
+  d.foldl (fun c b => ((c <<< 8) % 65536) ^^^ crc16Table[(c >>> 8) ^^^ b.toNat]!) 0 % 65536
 
 end VeriCut

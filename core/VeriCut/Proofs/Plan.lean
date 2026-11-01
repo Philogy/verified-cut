@@ -13,12 +13,11 @@ theorem foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β) (l : L
 
 theorem bestRice_lt (sum count : Nat) : (bestRice sum count).1 < 31 := by
   unfold bestRice
-  refine foldl_inv (fun b : Nat × Nat => b.1 < 31) _ _ _ (by simp; omega) ?_
+  refine foldl_inv (fun b : Nat × Nat => b.1 < 31) _ _ _ (by simp) ?_
   intro b k hk hb
+  simp only [List.mem_range] at hk
   simp only
-  split
-  · split <;> simp_all
-  · exact hb
+  split <;> simp_all
 
 /-! ## Residual partitions -/
 
@@ -36,7 +35,7 @@ theorem bestOrder_ok (hw : warmup ≤ n) :
   simp only [List.mem_range] at hp
   split
   · rename_i hok
-    simp only [orderFits, Bool.and_eq_true, decide_eq_true_eq, Nat.shiftRight_eq_div_pow] at hok
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Nat.shiftRight_eq_div_pow] at hok
     split
     · exact ⟨by omega, hok.1, hok.2⟩
     · exact hb
@@ -143,88 +142,38 @@ theorem inRange_div (bits w : Nat) (v : Int) (hv : InRange bits v) (hw : w ≤ b
   · apply Int.lt_of_mul_lt_mul_right _ (Int.le_of_lt hpos)
     rw [he, ← hp]; exact hi
 
-theorem inRange_of_all (bits : Nat) (a : Array Int) (h : a.all (inRange bits) = true) :
-    ∀ v ∈ a, InRange bits v := by
-  intro v hv
-  obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 hv
-  have := (Array.all_eq_true.1 h) i hi
-  simpa [inRange, InRange] using this
-
-/-- A body that decodes to `s` and is well formed. -/
-def BodyOk (bits : Nat) (s : Array Int) (b : Body × Nat) : Prop :=
-  b.1.samples s.size = s ∧ b.1.WF bits s.size
-
-theorem lpcBody_ok (st : Settings) (bits : Nat) (s : Array Int) (hr : ∀ v ∈ s, InRange bits v)
-    (c : Nat × Nat × Array Int) (b : Body × Nat) (h : lpcBody st bits s c = some b) : BodyOk bits s b := by
-  obtain ⟨precision, shift, coefs⟩ := c
-  unfold lpcBody at h
-  simp only [residual_eq] at h
-  split at h
-  · rename_i hg
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hg
-    obtain ⟨⟨⟨⟨⟨⟨h1, h32⟩, hn⟩, hp1⟩, hp15⟩, hsh⟩, hc⟩ := hg
-    split at h
-    · cases h
-      have hsize : (s.extract 0 coefs.size).size = coefs.size := by simp [Array.size_extract]; omega
-      obtain ⟨hvals, hwf⟩ := planResidual_spec (min st.maxPartitionOrder 15) s.size coefs.size
-        (residualOf coefs shift s coefs.size) (by omega) hn (size_residualOf _ _ _ _)
-      refine ⟨?_, ?_⟩
-      · simp only [Body.samples, hvals]
-        exact restore_residualOf _ _ _ _ (Nat.le_refl _) hn
-      · simp only [Body.WF]
-        exact ⟨hp1, hp15, hsh, hsize.symm, by omega, by omega, by omega, inRange_of_all _ _ hc,
-          fun v hv => hr v (mem_extract hv), by rw [hsize]; exact hwf⟩
-    · cases h
-  · cases h
-
-theorem planBody_spec (st : Settings) (ws : List FloatArray) (bits : Nat) (s : Array Int)
+theorem planBody_spec (st : Settings) (bits : Nat) (s : Array Int)
     (hr : ∀ v ∈ s, InRange bits v) :
-    (planBody st ws bits s).1.samples s.size = s ∧ (planBody st ws bits s).1.WF bits s.size := by
-  have verbatim : BodyOk bits s (Body.verbatim s, s.size * bits) := by
-    unfold BodyOk; exact ⟨rfl, rfl, hr⟩
-  have hk4 : bestFixedOrder st.maxFixedOrder s.size s ≤ 4 := by
-    unfold bestFixedOrder
-    exact foldl_inv (· ≤ 4) _ _ _ (by omega) (fun b k hk hb => by
-      simp only [List.mem_range] at hk; split <;> omega)
-  have fixed : ∀ c ∈ (if bestFixedOrder st.maxFixedOrder s.size s ≤ s.size then
-      [(Body.fixed (s.extract 0 (bestFixedOrder st.maxFixedOrder s.size s))
-        (planResidual (min st.maxPartitionOrder 15) s.size (bestFixedOrder st.maxFixedOrder s.size s)
-          (residual (fixedCoefs (bestFixedOrder st.maxFixedOrder s.size s)) 0 s
-            (bestFixedOrder st.maxFixedOrder s.size s))).1,
-        bestFixedOrder st.maxFixedOrder s.size s * bits +
-          (planResidual (min st.maxPartitionOrder 15) s.size (bestFixedOrder st.maxFixedOrder s.size s)
-            (residual (fixedCoefs (bestFixedOrder st.maxFixedOrder s.size s)) 0 s
-              (bestFixedOrder st.maxFixedOrder s.size s))).2)] else []), BodyOk bits s c := by
-    generalize bestFixedOrder st.maxFixedOrder s.size s = k at hk4 ⊢
+    (planBody st bits s).1.samples s.size = s ∧ (planBody st bits s).1.WF bits s.size := by
+  have verbatim : (Body.verbatim s).samples s.size = s ∧ (Body.verbatim s).WF bits s.size :=
+    ⟨rfl, rfl, hr⟩
+  dsimp only [planBody]
+  split
+  · exact verbatim
+  · rename_i first rest hscored
+    generalize hbest : rest.foldl _ first = best
+    have hmem : best ∈ first :: rest := by
+      rw [← hbest]
+      exact foldl_inv (· ∈ first :: rest) _ _ _ (by simp)
+        (fun b c hc hb => by split <;> simp_all) 
+    rw [← hscored, List.mem_map] at hmem
+    obtain ⟨k, hk, rfl⟩ := hmem
+    simp only [List.mem_filter, List.mem_range, decide_eq_true_eq] at hk
+    have hk4 : k ≤ 4 := by omega
+    have hsize : (s.extract 0 k).size = k := by simp [Array.size_extract]; omega
+    obtain ⟨hvals, hwf⟩ := planResidual_spec (min st.maxPartitionOrder 15) s.size k
+      (residualOf (fixedCoefs k) 0 s k) (by omega) hk.2 (size_residualOf _ _ _ _)
     split
-    · rename_i hkn
-      intro c hc
-      simp only [List.mem_singleton] at hc
-      subst hc
-      simp only [residual_eq]
-      have hsize : (s.extract 0 k).size = k := by simp [Array.size_extract]; omega
-      obtain ⟨hvals, hwf⟩ := planResidual_spec (min st.maxPartitionOrder 15) s.size k
-        (residualOf (fixedCoefs k) 0 s k) (by omega) hkn (size_residualOf _ _ _ _)
-      constructor
+    · constructor
       · simp only [Body.samples, hsize, hvals]
-        exact restore_residualOf _ _ _ _ (by rw [size_fixedCoefs k hk4]; exact Nat.le_refl _) hkn
+        exact restore_residualOf _ _ _ _ (by rw [size_fixedCoefs k hk4]; exact Nat.le_refl _) hk.2
       · simp only [Body.WF, hsize]
-        exact ⟨hk4, hkn, fun v hv => hr v (mem_extract hv), hwf⟩
-    · intro c hc; simp at hc
-  show BodyOk bits s (planBody st ws bits s)
-  unfold planBody
-  exact foldl_inv (BodyOk bits s) (fun best c => if c.2 < best.2 then c else best) _ _ verbatim
-    (fun b c hc hb => by
-      split
-      · rcases List.mem_append.1 hc with hc | hc
-        · exact fixed c hc
-        · obtain ⟨cand, -, hcand⟩ := List.mem_filterMap.1 hc
-          exact lpcBody_ok st bits s hr cand c hcand
-      · exact hb)
+        exact ⟨hk4, hk.2, fun v hv => hr v (mem_extract hv), hwf⟩
+    · exact verbatim
 
-theorem planSubframe_spec (st : Settings) (ws : List FloatArray) (bits : Nat) (s : Array Int) (hb : 0 < bits) (hn : 0 < s.size)
+theorem planSubframe_spec (st : Settings) (bits : Nat) (s : Array Int) (hb : 0 < bits) (hn : 0 < s.size)
     (hr : ∀ v ∈ s, InRange bits v) :
-    (planSubframe st ws bits s).1.samples s.size = s ∧ (planSubframe st ws bits s).1.WF bits s.size := by
+    (planSubframe st bits s).1.samples s.size = s ∧ (planSubframe st bits s).1.WF bits s.size := by
   dsimp only [planSubframe]
   split
   · rename_i hall
@@ -239,15 +188,18 @@ theorem planSubframe_spec (st : Settings) (ws : List FloatArray) (bits : Nat) (s
   · generalize hw : min (trailingZeros _) (bits - 1) = w
     split
     · rename_i hdiv
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hdiv
-      obtain ⟨h0, hdiv⟩ := hdiv
       rw [Array.all_eq_true] at hdiv
+      by_cases h0 : w = 0
+      · subst h0
+        simp only [if_true, Nat.sub_zero]
+        obtain ⟨hs, hwf⟩ := planBody_spec st bits s hr
+        exact ⟨by simpa [Subframe.samples] using hs, hb, hwf⟩
       · simp only [h0, if_false]
         have hdiv' : ∀ v ∈ s, v % 2 ^ w = 0 := by
           intro v hv
           obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 hv
           simpa using hdiv i hi
-        obtain ⟨hs, hwf⟩ := planBody_spec st ws (bits - w) (s.map (· / 2 ^ w)) (by
+        obtain ⟨hs, hwf⟩ := planBody_spec st (bits - w) (s.map (· / 2 ^ w)) (by
           intro v hv
           obtain ⟨u, hu, rfl⟩ := Array.mem_map.1 hv
           exact inRange_div bits w u (hr u hu) (by omega) (hdiv' u hu))
@@ -259,7 +211,7 @@ theorem planSubframe_spec (st : Settings) (ws : List FloatArray) (bits : Nat) (s
         simp only [Array.getElem_map, Function.comp]
         exact Int.ediv_mul_cancel (Int.dvd_of_emod_eq_zero (hdiv' _ (Array.getElem_mem h2)))
     · simp only [if_true, Nat.sub_zero]
-      obtain ⟨hs, hwf⟩ := planBody_spec st ws bits s hr
+      obtain ⟨hs, hwf⟩ := planBody_spec st bits s hr
       exact ⟨by simpa [Subframe.samples] using hs, hb, hwf⟩
 
 end VeriCut.Flac

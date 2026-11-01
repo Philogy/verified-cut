@@ -120,7 +120,7 @@ def dot (coefs s : Array Int) (i : Nat) : Nat → Int → Int
 
 /-- The prediction for sample `i` from the samples before it. -/
 def predict (coefs : Array Int) (shift : Nat) (s : Array Int) (i : Nat) : Int :=
-  dot coefs s i coefs.size 0 >>> shift
+  dot coefs s i coefs.size 0 / 2 ^ shift
 
 /-- Undo prediction: append `r + prediction` for each residual `r`. -/
 def restore (coefs : Array Int) (shift : Nat) (warmup residual : Array Int) : Array Int :=
@@ -133,7 +133,7 @@ def Body.samples (n : Nat) : Body → Array Int
   | .lpc _ shift coefs warmup r => restore coefs shift warmup r.values
 
 def Subframe.samples (n : Nat) (sf : Subframe) : Array Int :=
-  if sf.wasted = 0 then sf.body.samples n else let m : Int := 2 ^ sf.wasted; (sf.body.samples n).map (· * m)
+  if sf.wasted = 0 then sf.body.samples n else (sf.body.samples n).map (· * 2 ^ sf.wasted)
 
 /-- Coded channels to left/right (or the independent channels). -/
 def Channels.undo : Channels → Array (Array Int) → Array (Array Int)

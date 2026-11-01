@@ -33,68 +33,6 @@ theorem unaryAux_eq (d : ByteArray) (q acc pos : Nat) (t : List Bool)
     simp only [h8, dite_true, this, if_false]
     rw [ih _ _ hr]; congr 2 <;> omega
 
-/-! ## The allocation-free Rice reader -/
-
-theorem le_nextOne (d : ByteArray) (p : Nat) (hp : p ≤ 8 * d.size) : p ≤ nextOne d p := by
-  induction p using nextOne.induct d with
-  | case1 p h hb => rw [nextOne]; simp [h, hb]
-  | case2 p h hb ih => rw [nextOne]; simp only [h, dite_true, hb, if_false]; have := ih (by omega); omega
-  | case3 p h => rw [nextOne]; simp [h]; omega
-
-theorem unaryAux_nextOne (d : ByteArray) (p q : Nat) :
-    unaryAux d p q = if nextOne d p < 8 * d.size then .ok (q + (nextOne d p - p), nextOne d p + 1)
-      else .error "unexpected end of stream" := by
-  induction p, q using unaryAux.induct d with
-  | case1 p q h hb =>
-    rw [unaryAux, nextOne]
-    simp only [h, dite_true, hb, if_true]
-    rw [if_pos (by omega)]; simp
-  | case2 p q h hb ih =>
-    rw [unaryAux, nextOne]
-    simp only [h, dite_true, hb, if_false, ih]
-    have : p + 1 ≤ nextOne d (p + 1) := le_nextOne d (p + 1) (by omega)
-    split <;> simp; omega
-  | case3 p q h =>
-    rw [unaryAux, nextOne]
-    simp [h]
-theorem readBitsAux_bitsVal (d : ByteArray) (k acc p : Nat) :
-    readBitsAux d k acc p = if k = 0 ∨ p + k ≤ 8 * d.size then .ok (bitsVal d k acc p, p + k)
-      else .error "unexpected end of stream" := by
-  induction k generalizing acc p with
-  | zero => simp [readBitsAux, bitsVal]
-  | succ k ih =>
-    rw [readBitsAux]
-    split
-    · rename_i h
-      rw [ih, bitsVal, dif_pos h]
-      by_cases hk : k = 0 ∨ p + 1 + k ≤ 8 * d.size
-      · rw [if_pos hk, if_pos (by omega)]; congr 2; omega
-      · rw [if_neg hk, if_neg (by omega)]
-    · rename_i h
-      rw [if_neg (by omega)]
-
-theorem ricesLoop_eq (d : ByteArray) (k : Nat) :
-    ∀ c acc p, ricesLoop d k c acc p = many (riceP k) c acc d p := by
-  intro c
-  induction c with
-  | zero => intro acc p; rfl
-  | succ c ih =>
-    intro acc p
-    show _ = Parser.bind (riceP k) (fun a => many (riceP k) c (acc.push a)) d p
-    simp only [ricesLoop, riceP, bind, Parser.bind, unary, readBits, unaryAux_nextOne, readBitsAux_bitsVal]
-    by_cases h1 : nextOne d p < 8 * d.size
-    · rw [if_pos h1, if_pos h1]
-      dsimp only
-      by_cases h2 : k = 0 ∨ nextOne d p + 1 + k ≤ 8 * d.size
-      · rw [if_pos h2, if_pos h2]
-        simp only [pure, Parser.pure, Nat.zero_add]
-        exact ih _ _
-      · rw [if_neg h2, if_neg h2]
-    · rw [if_neg h1, if_neg h1]
-
-theorem ricesP_eq (k c : Nat) (acc : Array Int) : ricesP k c acc = many (riceP k) c acc := by
-  funext d p; exact ricesLoop_eq d k c acc p
-
 theorem roundTrip_unary (q : Nat) : RoundTrip (fun w => (w.zeros q).write 1 1) unary q := by
   refine ⟨List.replicate q false ++ [true], fun w => by simp [write_bits, zeros_bits, natBits], ?_⟩
   intro d pos t h
@@ -105,44 +43,16 @@ theorem unzigzag_zigzag (v : Int) : unzigzag (zigzag v) = v := by
   unfold zigzag unzigzag
   split <;> split <;> omega
 
-theorem natBits_one (q : Nat) : natBits (q + 1) 1 = List.replicate q false ++ [true] := by
-  rw [natBits_add, show 1 / 2 ^ 1 = 0 by rfl, natBits_zero_eq_replicate]
-  rfl
-
-theorem writeRice_bits (k : Nat) (w : Writer) (v : Int) :
-    (writeRice k w v).bits = ((((w.zeros (zigzag v >>> k)).write 1 1).write k (zigzag v % 2 ^ k))).bits := by
-  unfold writeRice
-  simp only [write_bits, zeros_bits, natBits_mod _ _ _ (Nat.le_refl _), List.append_assoc]
-  split
-  · rename_i hq
-    have hk : k ≤ 55 := by generalize zigzag v >>> k = q at hq; omega
-    have hlow := toNat_low (zigzag v) k (by omega)
-    have hp : (2 : Nat) ^ k < 2 ^ 63 := Nat.pow_lt_pow_right (by decide) (by omega)
-    have h1 : ((1 : UInt64) <<< k.toUInt64).toNat = 2 ^ k := by
-      have hk' : (k.toUInt64).toNat = k := by
-        rw [Nat.toUInt64, UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
-      rw [UInt64.toNat_shiftLeft, hk', Nat.mod_eq_of_lt (by omega : k < 64)]
-      have hp' : (2 : Nat) ^ k < 2 ^ 64 := Nat.lt_trans hp (by decide)
-      simp [Nat.one_shiftLeft, Nat.mod_eq_of_lt hp']
-    have hm : (((zigzag v).toUInt64 &&& ((1 : UInt64) <<< k.toUInt64 - 1)) + (1 : UInt64) <<< k.toUInt64).toNat =
-        2 ^ k + zigzag v % 2 ^ k := by
-      rw [UInt64.toNat_add, hlow, h1, Nat.mod_eq_of_lt (by have := Nat.mod_lt (zigzag v) (Nat.two_pow_pos k); omega)]
-      omega
-    rw [write_bits, hm]
-    have e := natBits_mul_add (zigzag v >>> k + 1) k 1 (zigzag v % 2 ^ k) (Nat.mod_lt _ (Nat.two_pow_pos k))
-    rw [Nat.one_mul] at e
-    rw [e, natBits_one, natBits_mod _ _ _ (Nat.le_refl _)]
-    simp [natBits]
-  · simp [zeros_bits, write_bits]
+theorem write_mod (w : Writer) (k v : Nat) : w.write k (v % 2 ^ k) = w.write k v := by
+  simp [Writer.write]
 
 theorem roundTrip_rice (k : Nat) (v : Int) : RoundTrip (writeRice k · v) (riceP k) v := by
-  refine RoundTrip.congrBits ?_ (fun w => (writeRice_bits k w v).symm)
   rt roundTrip_unary (zigzag v >>> k)
   rt RoundTrip.readBits k (zigzag v % 2 ^ k) (Nat.mod_lt _ (Nat.two_pow_pos k))
   · refine RoundTrip.pure' ?_
-    rw [pow2_eq, Nat.shiftRight_eq_div_pow, Nat.mul_comm, Nat.div_add_mod, unzigzag_zigzag]
+    rw [Nat.shiftRight_eq_div_pow, Nat.mul_comm, Nat.div_add_mod, unzigzag_zigzag]
   · intro w; rfl
-  · intro w; rfl
+  · intro w; simp only [writeRice, write_mod, id]
 
 /-! ## Frame numbers -/
 

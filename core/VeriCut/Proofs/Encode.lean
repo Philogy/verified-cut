@@ -108,10 +108,10 @@ theorem inRange_mid (b : Nat) (l r : Int) (hl : InRange b l) (hr : InRange b r) 
   unfold InRange at *; omega
 
 
-theorem planSubframe_spec' (st : Settings) (ws : List FloatArray) (b n : Nat) (s : Array Int) (hb : 0 < b) (hs : s.size = n)
+theorem planSubframe_spec' (st : Settings) (b n : Nat) (s : Array Int) (hb : 0 < b) (hs : s.size = n)
     (hn : 0 < n) (hr : ∀ v ∈ s, InRange b v) :
-    (planSubframe st ws b s).1.samples n = s ∧ (planSubframe st ws b s).1.WF b n := by
-  subst hs; exact planSubframe_spec st ws b s hb hn hr
+    (planSubframe st b s).1.samples n = s ∧ (planSubframe st b s).1.WF b n := by
+  subst hs; exact planSubframe_spec st b s hb hn hr
 
 /-- A stereo coding choice that decodes to `L, R`. -/
 def StereoOk (bits n : Nat) (L R : Array Int) (t : Channels × (Subframe × Nat) × (Subframe × Nat)) : Prop :=
@@ -131,9 +131,9 @@ theorem planFrame_spec (st : Settings) (x : Pcm) (valid : x.Valid) (info : Strea
   have hbps : 0 < x.format.bitsPerSample := by have := valid.bitsPerSample; omega
   have hC := valid.channels
   have blk : ∀ c, c < x.format.channels →
-      (planSubframe st (frameWindows st n) x.format.bitsPerSample (channelBlock x offset n c)).1.samples n = channelBlock x offset n c ∧
-      (planSubframe st (frameWindows st n) x.format.bitsPerSample (channelBlock x offset n c)).1.WF x.format.bitsPerSample n :=
-    fun c hc => planSubframe_spec' st (frameWindows st n) _ n _ hbps (size_channelBlock x offset n c) (by omega)
+      (planSubframe st x.format.bitsPerSample (channelBlock x offset n c)).1.samples n = channelBlock x offset n c ∧
+      (planSubframe st x.format.bitsPerSample (channelBlock x offset n c)).1.WF x.format.bitsPerSample n :=
+    fun c hc => planSubframe_spec' st _ n _ hbps (size_channelBlock x offset n c) (by omega)
       (inRange_channelBlock x valid offset n c hoff hc)
   have hhead : ∀ ch : Channels, ch.count = x.format.channels → (∀ k, ch = .independent k → 1 ≤ k ∧ k ≤ 8) →
       Header.WF info ⟨n, x.format.sampleRate, x.format.bitsPerSample, ch, number⟩ :=
@@ -150,12 +150,12 @@ theorem planFrame_spec (st : Settings) (x : Pcm) (valid : x.Valid) (info : Strea
     have g1 : ((Array.range x.format.channels).map (channelBlock x offset n))[1]! = channelBlock x offset n 1 := by
       rw [getElem!_pos _ _ (by simp; omega)]; simp
     have p0 : (((Array.range x.format.channels).map (channelBlock x offset n)).map
-        (planSubframe st (frameWindows st n) x.format.bitsPerSample))[0]! =
-        planSubframe st (frameWindows st n) x.format.bitsPerSample (channelBlock x offset n 0) := by
+        (planSubframe st x.format.bitsPerSample))[0]! =
+        planSubframe st x.format.bitsPerSample (channelBlock x offset n 0) := by
       rw [getElem!_pos _ _ (by simp; omega)]; simp
     have p1 : (((Array.range x.format.channels).map (channelBlock x offset n)).map
-        (planSubframe st (frameWindows st n) x.format.bitsPerSample))[1]! =
-        planSubframe st (frameWindows st n) x.format.bitsPerSample (channelBlock x offset n 1) := by
+        (planSubframe st x.format.bitsPerSample))[1]! =
+        planSubframe st x.format.bitsPerSample (channelBlock x offset n 1) := by
       rw [getElem!_pos _ _ (by simp; omega)]; simp
     rw [g0, g1, p0, p1]
     generalize hL : channelBlock x offset n 0 = L
@@ -166,13 +166,13 @@ theorem planFrame_spec (st : Settings) (x : Pcm) (valid : x.Valid) (info : Strea
     have rR : ∀ v ∈ R, InRange x.format.bitsPerSample v := hR ▸ inRange_channelBlock x valid offset n 1 hoff (by omega)
     obtain ⟨sL, wL⟩ := hL ▸ blk 0 (by omega)
     obtain ⟨sR, wR⟩ := hR ▸ blk 1 (by omega)
-    have hside := planSubframe_spec' st (frameWindows st n) (x.format.bitsPerSample + 1) n (Array.zipWith (· - ·) L R) (by omega)
+    have hside := planSubframe_spec' st (x.format.bitsPerSample + 1) n (Array.zipWith (· - ·) L R) (by omega)
       (by simp [hLs, hRs]) (by omega) (by
         intro v hv
         obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 hv
         simp only [Array.getElem_zipWith]
         exact inRange_side _ hbps _ _ (rL _ (Array.getElem_mem _)) (rR _ (Array.getElem_mem _)))
-    have hmid := planSubframe_spec' st (frameWindows st n) x.format.bitsPerSample n (Array.zipWith (fun a b => (a + b) / 2) L R) hbps
+    have hmid := planSubframe_spec' st x.format.bitsPerSample n (Array.zipWith (fun a b => (a + b) / 2) L R) hbps
       (by simp [hLs, hRs]) (by omega) (by
         intro v hv
         obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 hv

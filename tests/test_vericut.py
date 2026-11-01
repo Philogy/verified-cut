@@ -408,15 +408,16 @@ class Cli(unittest.TestCase):
 class ProofAudit(unittest.TestCase):
     def test_axioms(self):
         core = os.path.join(ROOT, "core")
-        src = os.path.join(core, "VeriCut/Correctness.lean")
-        if not os.path.exists(src):
-            self.skipTest("no Correctness.lean")
-        p = run(["lake", "env", "lean", src], check=False, cwd=core)
-        out = (p.stdout + p.stderr).decode()
-        self.assertEqual(p.returncode, 0, out)
-        self.assertNotIn("sorry", out)
-        # Correctness.lean pins each theorem's axioms with #guard_msgs; a change fails the build above.
-        self.assertNotIn("error", out)
+        for name in ("Correctness.lean", "CorrectnessFast.lean"):
+            src = os.path.join(core, "VeriCut", name)
+            if not os.path.exists(src):
+                self.skipTest(f"no {name}")
+            p = run(["lake", "env", "lean", src], check=False, cwd=core)
+            out = (p.stdout + p.stderr).decode()
+            self.assertEqual(p.returncode, 0, out)
+            self.assertNotIn("sorry", out)
+            # each theorem's axioms are pinned with #guard_msgs; a change fails the build above.
+            self.assertNotIn("error", out)
 
 
 if __name__ == "__main__":

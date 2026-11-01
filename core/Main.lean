@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import VeriCut.Export
-import VeriCut.Flac.Decode
+import VeriCut.Flac.Fast.Decode
+import VeriCut.Flac.Fast.Export
 import VeriCut.Wav
 
 /-!
@@ -13,6 +14,9 @@ import VeriCut.Wav
     vericut decode <in.flac> <out.wav>
 
 JSON on stdout; errors on stderr with a nonzero exit. Contract: `docs/cli.md`.
+
+Runs the fast codec (`Flac/Fast/`): `decodeFast` is the spec's `decode` (`decodeFast_eq`), and
+`encodeFast` output decodes to its input (`flac_roundTrip_fast`, `export_correct_fast`).
 -/
 
 open Lean VeriCut
@@ -25,9 +29,9 @@ def isFlac (d : ByteArray) : Bool := d.size ≥ 4 && d.extract 0 4 == "fLaC".toU
 
 def load (path : String) : IO Pcm := do
   let d ← IO.FS.readBinFile path
-  liftE path (if isFlac d then Flac.decode d else Wav.parse d)
+  liftE path (if isFlac d then Flac.Fast.decodeFast d else Wav.parse d)
 
-def levelArg : List String → IO Flac.Settings
+def levelArg : List String → IO Flac.Fast.Settings
   | [] => pure (.level 5)
   | ["--level", n] => match n.toNat? with
     | some n => pure (.level n)
@@ -87,7 +91,7 @@ def peaksBy (len ch bits : Nat) (get : Nat → Int64) (buckets : Nat) : Array In
 def peaks (path : String) (buckets : Nat) : IO (Array Int × Array Int) := do
   let d ← IO.FS.readBinFile path
   if isFlac d then
-    let x ← liftE path (Flac.decode d)
+    let x ← liftE path (Flac.Fast.decodeFast d)
     return peaksBy x.length x.format.channels x.format.bitsPerSample (fun k => Int64.ofInt x.samples[k]!) buckets
   let (f, start, frames) ← liftE path (Wav.header d)
   let bytes := (f.bitsPerSample + 7) / 8
@@ -113,7 +117,7 @@ def writeOut (path : String) (bytes : ByteArray) (samples : Nat) (t0 : Nat) : IO
   let t1 ← IO.monoMsNow
   IO.println (Json.mkObj [("samples", toJson samples), ("bytes", toJson bytes.size), ("ms", toJson (t1 - t0))]).compress
 
-def exportCmd (timeline out : String) (st : Flac.Settings) : IO Unit := do
+def exportCmd (timeline out : String) (st : Flac.Fast.Settings) : IO Unit := do
   let t0 ← IO.monoMsNow
   let j ← liftE timeline (Json.parse (← IO.FS.readFile timeline))
   let entries ← liftE timeline (parseTimeline j)
@@ -131,7 +135,7 @@ def exportCmd (timeline out : String) (st : Flac.Settings) : IO Unit := do
         let x ← match flacs[e.src]? with
           | some x => pure x
           | none => do
-            let x ← liftE e.src (Flac.decode d)
+            let x ← liftE e.src (Flac.Fast.decodeFast d)
             liftE e.src x.validate
             pure x
         flacs := flacs.insert e.src x
@@ -155,7 +159,7 @@ def exportCmd (timeline out : String) (st : Flac.Settings) : IO Unit := do
       throw (IO.userError s!"clip formats differ: {formatName c.src.format} vs {formatName format}")
   let total := clips.foldl (fun n (c : Clip) => n + (c.stop - c.start)) 0
   unless total < 2 ^ 36 do throw (IO.userError "timeline too long for FLAC")
-  writeOut out (exportClips st format clips.toList) total t0
+  writeOut out (exportClipsFast st format clips.toList) total t0
 
 def main (args : List String) : IO UInt32 := do
   try
@@ -171,7 +175,7 @@ def main (args : List String) : IO UInt32 := do
       let t0 ← IO.monoMsNow
       let x ← load i
       liftE i x.validate
-      writeOut o (Flac.encode st x) x.length t0
+      writeOut o (Flac.Fast.encodeFast st x) x.length t0
     | ["decode", i, o] =>
       let t0 ← IO.monoMsNow
       let x ← load i

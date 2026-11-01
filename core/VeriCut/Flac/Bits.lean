@@ -4,40 +4,25 @@ Bit writer and bit reader, most significant bit first (FLAC's order).
 
 namespace VeriCut
 
-/-- `2 ^ k`; for `k < 63` in `UInt64`, since `Nat` powers and shifts go through GMP. -/
-@[inline] def pow2 (k : Nat) : Nat := if k < 63 then ((1 : UInt64) <<< k.toUInt64).toNat else 2 ^ k
-
-/-- The bytes written so far, then the low `n` bits of `acc`, which don't fill a byte. -/
+/-- The bytes written so far, then `n` pending bits `acc` that don't fill a byte. -/
 structure Writer where
   bytes : ByteArray
-  acc : UInt64
+  acc : Nat
   n : Nat
-  n_lt : n < 8
 
 namespace Writer
 
-def empty : Writer := ⟨.empty, 0, 0, by decide⟩
+def empty : Writer := ⟨.empty, 0, 0⟩
 
-/-- Move the whole bytes of the `n ≤ 64` pending bits `acc` (its low `n`) to `bytes`. -/
-def flush (bytes : ByteArray) (acc : UInt64) (n : Nat) (h : n ≤ 64) : Writer :=
-  if h8 : 8 ≤ n then flush (bytes.push (acc >>> (n - 8).toUInt64).toUInt8) acc (n - 8) (by omega)
-  else ⟨bytes, acc, n, by omega⟩
+def flush (bytes : ByteArray) (acc n : Nat) : Writer :=
+  if 8 ≤ n then flush (bytes.push (acc >>> (n - 8)).toUInt8) (acc % 2 ^ (n - 8)) (n - 8)
+  else ⟨bytes, acc, n⟩
 termination_by n
 decreasing_by omega
 
-/-- Append the low `k ≤ 56` bits of `v`, through the 64-bit buffer at once. -/
-@[inline] def writeFast (w : Writer) (k v : Nat) (h : k ≤ 56) : Writer :=
-  let low := v.toUInt64 &&& ((1 <<< k.toUInt64) - 1)
-  flush w.bytes ((w.acc <<< k.toUInt64) + low) (w.n + k) (by have := w.n_lt; omega)
-
-/-- Append the low `k` bits of `v` one at a time. -/
-def writeBits (w : Writer) : Nat → Nat → Writer
-  | 0, _ => w
-  | k + 1, v => (writeBits w k (v >>> 1)).writeFast 1 v (by decide)
-
 /-- Append the low `k` bits of `v`. -/
 def write (w : Writer) (k v : Nat) : Writer :=
-  if h : k ≤ 56 then w.writeFast k v h else w.writeBits k v
+  flush w.bytes ((w.acc <<< k) + v % 2 ^ k) (w.n + k)
 
 /-- Append `k` zero bits. -/
 def zeros (w : Writer) (k : Nat) : Writer :=
@@ -47,7 +32,7 @@ decreasing_by omega
 
 /-- Two's complement in `k` bits. -/
 def writeSigned (w : Writer) (k : Nat) (v : Int) : Writer :=
-  w.write k (v % (pow2 k : Int)).toNat
+  w.write k (v % 2 ^ k).toNat
 
 /-- Pad with zeros to a byte boundary. -/
 def align (w : Writer) : Writer :=
@@ -97,8 +82,7 @@ def readBits (k : Nat) : Parser Nat := fun d p => readBitsAux d k 0 p
 /-- `k` bits as a two's complement number. -/
 def readSigned (k : Nat) : Parser Int := do
   let u ← readBits k
-  let m := pow2 k
-  pure (if 2 * u < m then (u : Int) else (u : Int) - m)
+  pure (if 2 * u < 2 ^ k then (u : Int) else (u : Int) - 2 ^ k)
 
 def unaryAux (d : ByteArray) (p q : Nat) : Except String (Nat × Nat) :=
   if h : p / 8 < d.size then
@@ -115,22 +99,6 @@ def skip (k : Nat) : Parser Unit := fun d p =>
 
 /-- Skip to the next byte boundary. -/
 def align : Parser Unit := fun d p => skip ((8 - p % 8) % 8) d p
-
-/-- The first position from `p` on holding a one bit, or `8 * d.size` if there is none. Like
-`unaryAux` (`unaryAux_nextOne`) but returning a plain number, so nothing is allocated. -/
-def nextOne (d : ByteArray) (p : Nat) : Nat :=
-  if h : p / 8 < d.size then
-    if bitAt d p h = 1 then p else nextOne d (p + 1)
-  else 8 * d.size
-termination_by 8 * d.size - p
-decreasing_by omega
-
-/-- The `k` bits from `p` as a number after `acc` (bits past the end read as zero); the value of
-`readBitsAux` (`readBitsAux_bitsVal`). -/
-def bitsVal (d : ByteArray) : Nat → Nat → Nat → Nat
-  | 0, acc, _ => acc
-  | k + 1, acc, p =>
-    if h : p / 8 < d.size then bitsVal d k (2 * acc + bitAt d p h) (p + 1) else bitsVal d k (2 * acc) (p + 1)
 
 /-- Run `p` `k` times, appending the results to `acc`. -/
 def many (p : Parser α) : Nat → Array α → Parser (Array α)

@@ -13,21 +13,7 @@ open Parser
 def riceP (k : Nat) : Parser Int := do
   let q ← unary
   let r ← readBits k
-  pure (unzigzag (q * pow2 k + r))
-
-/-- `count` Rice codes with parameter `k`, appended to `acc`: `many (riceP k)` without
-allocating per value (`ricesLoop_eq`). -/
-def ricesLoop (d : ByteArray) (k : Nat) : Nat → Array Int → Nat → Except String (Array Int × Nat)
-  | 0, acc, p => .ok (acc, p)
-  | c + 1, acc, p =>
-    let p1 := nextOne d p
-    if p1 < 8 * d.size then
-      if k = 0 ∨ p1 + 1 + k ≤ 8 * d.size then
-        ricesLoop d k c (acc.push (unzigzag ((p1 - p) * pow2 k + bitsVal d k 0 (p1 + 1)))) (p1 + 1 + k)
-      else .error "unexpected end of stream"
-    else .error "unexpected end of stream"
-
-def ricesP (k count : Nat) (acc : Array Int) : Parser (Array Int) := fun d p => ricesLoop d k count acc p
+  pure (unzigzag (q * 2 ^ k + r))
 
 def partitionP (paramBits count : Nat) : Parser Partition := do
   let k ← readBits paramBits
@@ -36,7 +22,7 @@ def partitionP (paramBits count : Nat) : Parser Partition := do
     let values ← many (readSigned bits) count #[]
     pure ⟨.raw bits, values⟩
   else
-    let values ← ricesP k count #[]
+    let values ← many (riceP k) count #[]
     pure ⟨.rice k, values⟩
 
 /-- The residual of a block of `n` samples after `warmup` warm-up samples. -/

@@ -10,15 +10,9 @@ namespace VeriCut.Flac
 
 open Writer
 
-/-- `u >>> k` zeros, a one, then the low `k` bits of `u` (`u = zigzag v`); one write when it fits. -/
 def writeRice (k : Nat) (w : Writer) (v : Int) : Writer :=
   let u := zigzag v
-  let q := u >>> k
-  -- In `UInt64`: `Nat` shifts go through GMP.
-  if q + 1 + k ≤ 56 then
-    let m : UInt64 := 1 <<< k.toUInt64
-    w.write (q + 1 + k) ((u.toUInt64 &&& (m - 1)) + m).toNat
-  else ((w.zeros q).write 1 1).write k u
+  ((w.zeros (u >>> k)).write 1 1).write k u
 
 def writePartition (paramBits : Nat) (w : Writer) (p : Partition) : Writer :=
   match p.coding with
