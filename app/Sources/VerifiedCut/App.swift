@@ -14,6 +14,7 @@ struct VerifiedCutApp: App {
         WindowGroup("Verified Cut") {
             ContentView()
                 .frame(minWidth: 900, minHeight: 600)
+                .preferredColorScheme(.dark)
         }
     }
 }
