@@ -200,8 +200,17 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
   let mut loaded : Array LoadedClip := #[]
   let mut cuts : Array (VeriCut.Stream Pkt × List Segment) := #[]
   let mut fmt : Option (Nat × Nat × Nat × Nat × String) := none
+  -- Each source file is read and indexed once, however many clips cut from it.
+  let mut sources : Array (String × VideoTrack × Array Nat × VeriCut.Stream Pkt) := #[]
   for c in tl do
-    let (bytes, t) ← loadTrack c.path
+    let mut src := sources.find? (·.1 == c.path)
+    if src.isNone then
+      let (bytes, t) ← loadTrack c.path
+      let ranks := displayRanks t
+      src := some (c.path, t, ranks, pktStream srcs.size t (ranks[·]!))
+      srcs := srcs.push bytes
+      sources := sources.push src.get!
+    let some (_, t, ranks, s) := src | unreachable!
     let dur := t.samples[0]!.dur
     if (t.samples.pop).any (·.dur != dur) then
       throw (IO.userError s!"{c.path}: variable frame rate is not supported")
@@ -210,9 +219,6 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
     | some (ts, d, w, h, cd) =>
       unless ts == t.timescale && d == dur && w == t.width && h == t.height && cd == t.codec do
         throw (IO.userError s!"{c.path}: frame rate, size or codec differs from the first clip")
-    let ranks := displayRanks t
-    let s := pktStream srcs.size t (ranks[·]!)
-    srcs := srcs.push bytes
     loaded := loaded.push { clip := c, track := t, ranks }
     cuts := cuts.push (s, ← planClip c t s)
   -- 2. the proven exporter (`exportTimeline_correct`), with ffmpeg as the encoder
