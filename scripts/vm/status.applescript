@@ -1,7 +1,7 @@
 -- Print the plan summary, the status line and one line per clip row.
 on run
-	set out to "plan: " & idValue("plan.summary") & linefeed & "status: " & idValue("status") & linefeed
-	tell application "System Events" to set n to count of rows of my byId(my appWindow(), "clip.list")
+	set out to "plan: " & idValue("plan.summary") & linefeed & "frames: " & idValue("timeline.frames") & linefeed & "status: " & idValue("status") & linefeed
+	set n to count of allById(appWindow(), "clip.row")
 	repeat with i from 1 to n
 		set r to clipRow(i)
 		set out to out & "clip " & i & ": "

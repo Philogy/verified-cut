@@ -21,11 +21,30 @@ on appWindow()
 	tell application "System Events" to return window 1 of process "VerifiedCut"
 end appWindow
 
--- Clip row n of the timeline list; the row-level ids (clip.in.stepper, ...) repeat per row.
+-- Every element under root whose AXIdentifier is ident, in tree order.
+on allById(root, ident)
+	set found to {}
+	tell application "System Events"
+		set es to entire contents of root
+		repeat with e in es
+			set e to contents of e
+			try
+				if value of attribute "AXIdentifier" of e is ident then set end of found to e
+			end try
+		end repeat
+	end tell
+	return found
+end allById
+
+-- Lane header n (the clip's name, In/Out steppers, order buttons); row-level ids (clip.in.stepper, ...) repeat per lane.
 on clipRow(n)
-	set l to byId(appWindow(), "clip.list")
-	tell application "System Events" to return UI element 1 of row n of l
+	return item n of allById(appWindow(), "clip.row")
 end clipRow
+
+-- Timeline lane n: the clip rectangle with its trim handles (clip.in.handle, clip.out.handle).
+on clipLane(n)
+	return item n of allById(appWindow(), "clip.lane")
+end clipLane
 
 -- SwiftUI drops empty Text views from the tree, so a missing element reads as "".
 on idValue(ident)
