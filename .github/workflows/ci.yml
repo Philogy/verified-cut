@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  proofs:
+    name: Build, proofs, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        with:
+          path: core/.lake
+          key: lake-${{ runner.os }}-${{ hashFiles('core/lean-toolchain', 'core/lake-manifest.json') }}-${{ hashFiles('core/**/*.lean') }}
+          restore-keys: lake-${{ runner.os }}-${{ hashFiles('core/lean-toolchain', 'core/lake-manifest.json') }}-
+
+      # The `#guard_msgs in #print axioms` checks in Correctness.lean and CorrectnessFast.lean
+      # fail this build if a main theorem uses anything beyond propext, Classical.choice, Quot.sound.
+      - name: lake build
+        run: lake build 2>&1 | tee build.log
+
+      # A build with `sorry` still succeeds; reject it. Challenge.lean is sorry by design and is
+      # not part of the default build.
+      - name: No sorry
+        run: |
+          if grep -n "declaration uses \`sorry\`" build.log; then exit 1; fi
+          if grep -rnwE "sorry|admit" --include='*.lean' VeriCut Main.lean | grep -v '^VeriCut/Challenge.lean:'; then exit 1; fi
+
+      - name: Install flac and ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -yq flac ffmpeg
+
+      - name: Tests
+        working-directory: .
+        run: python3 tests/test_vericut.py
+
+  comparator:
+    # `lake comparator` ships with Lake from Lean v4.35.0; the project is pinned to v4.33.0, so this
+    # job runs the v4.35.0 toolchain over it. Its sandbox is bubblewrap, so Linux only.
+    name: lake comparator
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan and bubblewrap
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -q && sudo apt-get install -yq bubblewrap
+          # Ubuntu 24.04 blocks unprivileged user namespaces, which bwrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Compare VeriCut.Challenge against VeriCut.CorrectnessFast
+        run: |
+          echo "leanprover/lean4:v4.35.0" > lean-toolchain
+          lake comparator

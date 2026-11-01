@@ -1,0 +1,12 @@
+{
+  "challenge_module": "VeriCut.Challenge",
+  "solution_module": "VeriCut.CorrectnessFast",
+  "theorem_names": [
+    "VeriCut.flac_roundTrip",
+    "VeriCut.export_correct",
+    "VeriCut.decodeFast_eq",
+    "VeriCut.flac_roundTrip_fast",
+    "VeriCut.export_correct_fast"
+  ],
+  "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
+}
