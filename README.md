@@ -122,5 +122,4 @@ frame is a keyframe causes the smart-cut tests to fail.
 - Testing note: lossless x264 (`-qp 0`, High 4:4:4) as the boundary encoder makes
   ffmpeg's decoder drift on later copied GOPs (deterministic, about 1 LSB). Normal
   lossy encodes don't. The tests use lossy encodes and PSNR for re-encoded frames.
-- `checkClosed` is O(run²) on huge runs. It's an auto-research target, along with
-  re-encoding fewer than a GOP per cut (see the I_PCM idea in the design notes).
+- Re-encoding fewer than a GOP per cut is an open auto-research target (see the I_PCM idea in the design notes).

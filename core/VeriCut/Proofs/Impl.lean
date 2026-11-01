@@ -5,20 +5,27 @@ namespace VeriCut
 
 variable {α : Type} [Inhabited α]
 
-theorem copyTable_size (s : Stream α) (r : DisplayRange) (k : Nat) :
-    (copyTable s r k).size = k := by
+theorem getD_toArray (s : Stream α) (i : Nat) : s.toArray.getD i default = s.getD i default := by
+  simp [Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD]
+
+theorem wantedA_toArray (s : Stream α) (r : DisplayRange) (i : Nat) :
+    wantedA s.toArray r i = wanted s r i := by
+  simp only [wantedA, wanted, getD_toArray, List.size_toArray]
+
+theorem copyTable_size (a : Array (Packet α)) (r : DisplayRange) (k : Nat) :
+    (copyTable a r k).size = k := by
   induction k with
   | zero => rfl
   | succ k ih => simp [copyTable, ih]
 
 theorem copyTable_getD (s : Stream α) (r : DisplayRange) :
-    ∀ k i, i < k → (copyTable s r k).getD i false = copyable s r i := by
+    ∀ k i, i < k → (copyTable s.toArray r k).getD i false = copyable s r i := by
   intro k
   induction k with
   | zero => intro i h; omega
   | succ k ih =>
     intro i hi
-    have hsz := copyTable_size s r k
+    have hsz := copyTable_size s.toArray r k
     simp only [copyTable]
     by_cases h : i < k
     · rw [Array.getD_eq_getD_getElem?, Array.getElem?_push]
@@ -29,7 +36,7 @@ theorem copyTable_getD (s : Stream α) (r : DisplayRange) :
       subst hik
       rw [Array.getD_eq_getD_getElem?, Array.getElem?_push]
       simp only [hsz, if_true, Option.getD_some]
-      rw [copyEntry, copyable_eq]
+      rw [copyEntry, copyable_eq, wantedA_toArray, getD_toArray]
       congr 1
       apply Bool.eq_iff_iff.mpr
       simp only [List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq]
@@ -39,8 +46,8 @@ theorem copyTable_getD (s : Stream α) (r : DisplayRange) :
 
 /-- The table agrees with the reference definition. -/
 theorem table_eq_copyable (s : Stream α) (r : DisplayRange) (i : Nat) (hi : i < s.length) :
-    (copyTable s r s.length).getD i false = copyable s r i :=
-  copyTable_getD s r _ i hi
+    (copyTable s.toArray r s.toArray.size).getD i false = copyable s r i :=
+  copyTable_getD s r _ i (by simpa using hi)
 
 theorem runs_flatten (f : Nat → Bool) (l : List Nat) :
     ((runs f l).map Prod.snd).flatten = l := by
@@ -80,12 +87,41 @@ theorem runs_const (f : Nat → Bool) (l : List Nat) :
         · exact ih (b, run) (by simp) y hy
         · exact ih p (by simp [hp]) y hy
 
-theorem checkClosed_sound (s : Stream α) (ks : List Nat) (h : checkClosed s ks = true) :
+theorem memTable_getD_aux (n : Nat) (run : List Nat) (m : Array Bool) (hm : m.size = n) (i : Nat) :
+    (run.foldl (fun m i => m.set! i true) m).getD i false =
+      (m.getD i false || (decide (i < n) && run.contains i)) := by
+  induction run generalizing m with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih _ (by simp [hm])]
+    simp only [Array.set!, Array.getD_eq_getD_getElem?, Array.getElem?_setIfInBounds,
+      List.contains_cons, hm]
+    by_cases hx : x = i
+    · subst hx; by_cases h : x < n
+      · simp [h]
+      · simp [h, Array.getElem?_eq_none (show m.size ≤ x by omega)]
+    · have : (i == x) = false := by simp; omega
+      simp [hx, this]
+
+theorem memTable_getD (n : Nat) (run : List Nat) (i : Nat) :
+    (memTable n run).getD i false = (decide (i < n) && run.contains i) := by
+  rw [memTable, memTable_getD_aux n run _ (by simp)]
+  by_cases h : i < n <;> simp [Array.getD_eq_getD_getElem?, h]
+
+theorem checkClosed_sound (s : Stream α) (mem : Array Bool) (ks : List Nat)
+    (hmem : ∀ x, mem.getD x false = true ↔ x ∈ ks) (h : checkClosed s.toArray mem ks = true) :
     DepClosed s ks := by
   intro k hk hlen x hx
-  simp only [checkClosed, List.all_eq_true, List.contains_iff_mem] at h
-  have := h k hk x (by simpa [List.getD_eq_getElem?_getD, hlen] using hx)
-  simpa using this
+  simp only [checkClosed, List.all_eq_true, getD_toArray] at h
+  exact (hmem x).mp (h k hk x (by simpa [List.getD_eq_getElem?_getD, hlen] using hx))
+
+/-- The frames `mkSegment` copies for a run: those of `run` below `n`. -/
+theorem mem_filter_memTable (n : Nat) (run : List Nat) (i : Nat) :
+    i ∈ (List.range n).filter (fun i => (memTable n run).getD i false) ↔ i < n ∧ i ∈ run := by
+  simp only [List.mem_filter, List.mem_range, memTable_getD, Bool.and_eq_true, decide_eq_true_eq,
+    List.contains_iff_mem]
+  exact ⟨fun h => h.2, fun h => ⟨h.1, h⟩⟩
 
 /-- **Planner soundness**: every copy segment the planner emits is a valid copy
 set, so by `export_correct` the export decodes to the requested frames. -/
@@ -98,18 +134,21 @@ theorem plan_valid (s : Stream α) (r : DisplayRange) : PlanValid s (plan s r) :
   · split at hseg
     · rename_i _ hc
       injection hseg with hks; subst hks
-      exact ⟨List.Pairwise.filter _ List.pairwise_lt_range,
-        by intro k hk; simp at hk; exact hk.1, checkClosed_sound s _ hc⟩
+      refine ⟨List.Pairwise.filter _ List.pairwise_lt_range,
+        by intro k hk; simp at hk; simpa using hk.1, checkClosed_sound s _ _ ?_ hc⟩
+      intro x
+      rw [mem_filter_memTable, memTable_getD]
+      simp
     · cases hseg
   · cases hseg
 
 theorem mkSegment_frames_mem (s : Stream α) (b : Bool) (run : List Nat)
     (hrun : ∀ x ∈ run, x < s.length) (i : Nat) :
-    i ∈ (mkSegment s b run).frames ↔ i ∈ run := by
+    i ∈ (mkSegment s.toArray b run).frames ↔ i ∈ run := by
   simp only [mkSegment]
   split
   · split
-    · simp only [Segment.frames, List.mem_filter, List.mem_range, List.contains_iff_mem]
+    · simp only [Segment.frames, mem_filter_memTable, List.size_toArray]
       exact ⟨fun h => h.2, fun h => ⟨hrun i h, h⟩⟩
     · rfl
   · rfl
@@ -117,19 +156,20 @@ theorem mkSegment_frames_mem (s : Stream α) (b : Bool) (run : List Nat)
 /-- **Coverage**: the plan contains exactly the wanted frames. -/
 theorem plan_covers (s : Stream α) (r : DisplayRange) (i : Nat) :
     i ∈ ((plan s r).map Segment.frames).flatten ↔ wanted s r i = true := by
-  have hdo : ∀ x, x ∈ displayOrder s r ↔ wanted s r x = true := by
+  have hdo : ∀ x, x ∈ displayOrder s.toArray r ↔ wanted s r x = true := by
     intro x
-    simp only [displayOrder, List.mem_mergeSort, List.mem_filter, List.mem_range]
+    simp only [displayOrder, List.mem_mergeSort, List.mem_filter, List.mem_range,
+      wantedA_toArray, List.size_toArray]
     exact ⟨fun h => h.2, fun h => ⟨wanted_lt s r x h, h⟩⟩
-  rw [← hdo, ← runs_flatten (fun i => (copyTable s r s.length).getD i false) (displayOrder s r)]
+  rw [← hdo, ← runs_flatten (fun i => (copyTable s.toArray r s.toArray.size).getD i false) (displayOrder s.toArray r)]
   simp only [plan, List.map_map, List.mem_flatten, List.mem_map, Function.comp]
   constructor
   · rintro ⟨_, ⟨p, hp, rfl⟩, hi⟩
     refine ⟨p.2, ⟨p, hp, rfl⟩, ?_⟩
     have hrun : ∀ x ∈ p.2, x < s.length := by
       intro x hx
-      have : x ∈ displayOrder s r := by
-        rw [← runs_flatten (fun i => (copyTable s r s.length).getD i false) (displayOrder s r)]
+      have : x ∈ displayOrder s.toArray r := by
+        rw [← runs_flatten (fun i => (copyTable s.toArray r s.toArray.size).getD i false) (displayOrder s.toArray r)]
         exact List.mem_flatten.mpr ⟨p.2, List.mem_map.mpr ⟨p, hp, rfl⟩, hx⟩
       exact wanted_lt s r x ((hdo x).mp this)
     exact (mkSegment_frames_mem s p.1 p.2 hrun i).mp hi
@@ -137,8 +177,8 @@ theorem plan_covers (s : Stream α) (r : DisplayRange) (i : Nat) :
     refine ⟨_, ⟨p, hp, rfl⟩, ?_⟩
     have hrun : ∀ x ∈ p.2, x < s.length := by
       intro x hx
-      have : x ∈ displayOrder s r := by
-        rw [← runs_flatten (fun i => (copyTable s r s.length).getD i false) (displayOrder s r)]
+      have : x ∈ displayOrder s.toArray r := by
+        rw [← runs_flatten (fun i => (copyTable s.toArray r s.toArray.size).getD i false) (displayOrder s.toArray r)]
         exact List.mem_flatten.mpr ⟨p.2, List.mem_map.mpr ⟨p, hp, rfl⟩, hx⟩
       exact wanted_lt s r x ((hdo x).mp this)
     exact (mkSegment_frames_mem s p.1 p.2 hrun i).mpr hi
@@ -156,7 +196,7 @@ theorem plan_copy_copyable (s : Stream α) (r : DisplayRange) (ks : List Nat)
     split at hseg
     · injection hseg with hks; subst hks
       intro i hi
-      simp only [List.mem_filter, List.mem_range, List.contains_iff_mem] at hi
+      simp only [mem_filter_memTable, List.size_toArray] at hi
       have := hconst i hi.2
       simp only at this
       rw [← table_eq_copyable s r i hi.1, this, hb]
