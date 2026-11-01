@@ -46,15 +46,14 @@ theorem foldl_max_lt {l : List α} {f : α → Nat} {B m : Nat} (h : ∀ a ∈ l
     simp only [List.map_cons, List.foldl_cons]
     exact ih (fun b hb => h b (by simp [hb])) (by have := h a (by simp); omega)
 
-theorem sum_sq_mono {l : List α} {f g : α → Nat} (h : ∀ a ∈ l, f a ≤ g a) :
-    ((l.map f).map (· ^ 2)).sum ≤ ((l.map g).map (· ^ 2)).sum := by
-  induction l with
-  | nil => simp
+theorem sum_sq_mono {l : List α} {f g : α → Nat} (h : ∀ a ∈ l, f a ≤ g a) {m m' : Nat}
+    (hm : m ≤ m') : (l.map f).foldl (fun s d => s + d ^ 2) m ≤ (l.map g).foldl (fun s d => s + d ^ 2) m' := by
+  induction l generalizing m m' with
+  | nil => simpa
   | cons a l ih =>
-    simp only [List.map_cons, List.sum_cons]
+    simp only [List.map_cons, List.foldl_cons]
     have := Nat.pow_le_pow_left (h a (by simp)) 2
-    have := ih (fun b hb => h b (by simp [hb]))
-    omega
+    exact ih (fun b hb => h b (by simp [hb])) (by omega)
 
 theorem sampleErr_mono {q q' : Nat} {x : Pcm} (hx : x.Valid) (hq : q ≤ q') {vi : Int × Nat}
     (h : vi ∈ indexed x) : sampleErr q x vi ≤ sampleErr q' x vi := by
@@ -84,7 +83,7 @@ theorem quantize_mono_maxErr {q q' : Nat} {x : Pcm} (hx : x.Valid) (hq : q ≤ q
 theorem quantize_mono_sqErr {q q' : Nat} {x : Pcm} (hx : x.Valid) (hq : q ≤ q') :
     sqErr x (quantize q x) ≤ sqErr x (quantize q' x) := by
   simp only [sqErr, diffs_quantize]
-  exact sum_sq_mono (fun _ h => sampleErr_mono hx hq h)
+  exact sum_sq_mono (fun _ h => sampleErr_mono hx hq h) (Nat.le_refl 0)
 
 theorem quantize_maxErr_lt {q : Nat} {x : Pcm} (hx : x.Valid) : maxErr x (quantize q x) < 2 ^ q := by
   simp only [maxErr, diffs_quantize]

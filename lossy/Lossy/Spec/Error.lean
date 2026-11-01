@@ -13,6 +13,6 @@ def diffs (x y : Pcm) : List Nat :=
 def maxErr (x y : Pcm) : Nat := (diffs x y).foldl max 0
 
 /-- The sum of squared sample errors. -/
-def sqErr (x y : Pcm) : Nat := ((diffs x y).map (· ^ 2)).sum
+def sqErr (x y : Pcm) : Nat := (diffs x y).foldl (fun s d => s + d ^ 2) 0
 
 end Lossy
