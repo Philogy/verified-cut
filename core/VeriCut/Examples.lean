@@ -1,6 +1,6 @@
 import VeriCut.Proofs.Impl
 import VeriCut.Proofs.Export
-import VeriCut.Proofs.Run
+import VeriCut.Correctness
 
 /-!
 # Examples: hypotheses are satisfiable, the spec rejects bad cuts
@@ -72,24 +72,23 @@ theorem intraEnc_contract (s : Stream Nat) (j : Job) :
       intro i h1 h2
       rw [getElem_decode, picture_eq _ _ _ (by simpa [length_decode] using h1)]
       simp [intraEnc, toy]
-    rw [this]; exact AllRel.refl (fun _ => rfl) _
+    unfold DecodesTo; rw [this]; exact AllRel.refl (fun _ => rfl) _
+
+/-- A two-clip timeline for the examples below. -/
+def twoClips : Timeline Nat := [⟨gop2, ⟨1, 5⟩⟩, ⟨bframes, ⟨0, 3⟩⟩]
 
 /-- The hypotheses of `exportTimeline_correct` hold on a concrete two-clip
 timeline, and the conclusion is equality since this encoder is exact. -/
-example : decode toy (concatStreams
-      ((exportTimeline (m := PureEncode Nat) [(gop2, plan gop2 ⟨1, 5⟩), (bframes, plan bframes ⟨0, 3⟩)]).run
-        (fun j => intraEnc (if j.clip = 0 then gop2 else bframes) j)).flatten) =
-    ([(gop2, (⟨1, 5⟩ : DisplayRange)), (bframes, ⟨0, 3⟩)].map
-      fun x => target toy x.1 (plan x.1 x.2)).flatten := by
+example : decode toy (twoClips.exportWith fun j => intraEnc (if j.clip = 0 then gop2 else bframes) j) =
+    twoClips.target toy := by
   apply AllRel.eq_of
-  exact exportTimeline_correct (cuts := [(gop2, ⟨1, 5⟩), (bframes, ⟨0, 3⟩)]) _
-    (by intro x hx; simp at hx; rcases hx with rfl | rfl <;> (unfold Stream.WellFormed; decide))
-    (fun _ => rfl)
-    (by intro i hi ks _; simp at hi
-        rcases (by omega : i = 0 ∨ i = 1) with rfl | rfl
-        · exact intraEnc_contract gop2 ⟨0, ks⟩
-        · exact intraEnc_contract bframes ⟨1, ks⟩)
-
+  apply exportTimeline_correct toy (· = ·) twoClips _ (fun _ => rfl)
+  · intro cut hcut; simp [twoClips] at hcut
+    rcases hcut with rfl | rfl <;> (unfold Stream.WellFormed; decide)
+  · intro ⟨i, ks⟩ cut hcut _
+    rcases i with _ | _ | _ <;> simp [twoClips] at hcut <;> subst hcut
+    · exact intraEnc_contract gop2 ⟨0, ks⟩
+    · exact intraEnc_contract bframes ⟨1, ks⟩
 
 -- The exporter, run with the toy encoder: frames 1, 2 re-encoded as intra
 -- packets holding their pictures, 3, 4 copied with references renumbered.

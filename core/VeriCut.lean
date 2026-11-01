@@ -1,6 +1,7 @@
 import VeriCut.Spec.Stream
 import VeriCut.Spec.Export
 import VeriCut.Spec.Planner
+import VeriCut.Spec.Timeline
 import VeriCut.Proofs.Decode
 import VeriCut.Proofs.Export
 import VeriCut.Proofs.Planner
@@ -8,6 +9,7 @@ import VeriCut.Proofs.Impl
 import VeriCut.Impl.Planner
 import VeriCut.Impl.Export
 import VeriCut.Proofs.Run
+import VeriCut.Correctness
 import VeriCut.Proofs.Bridge
 import VeriCut.MP4.Parse
 import VeriCut.MP4.Write

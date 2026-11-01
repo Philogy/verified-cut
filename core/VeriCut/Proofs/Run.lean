@@ -1,5 +1,4 @@
-import VeriCut.Impl.Export
-import VeriCut.Impl.Planner
+import VeriCut.Spec.Timeline
 import VeriCut.Proofs.Export
 import VeriCut.Proofs.Impl
 
@@ -8,8 +7,8 @@ import VeriCut.Proofs.Impl
 
 `exportTimeline` is the code `vericut export` executes (in `IO`, with ffmpeg
 as the encoder). Here it runs with the encoder replaced by an arbitrary
-function `f`; `exportTimeline_correct` holds for every `f` meeting the
-per-job encoder contract.
+function `f`; `exportWith_correct` holds for every `f` meeting the per-job
+encoder contract. The statement is restated in `Correctness.lean`.
 -/
 
 namespace VeriCut
@@ -107,26 +106,21 @@ theorem renderFrom_ok (f : Job → Stream α) (hR : ∀ p, approx p p) :
                  fun ks hk => h0.2.2 ks (by simp [hk])⟩
                (fun seg' hm => hseg seg' (by simp [hm])))
 
-/-- **End-to-end correctness of the export the CLI runs.** For any codec, any
-encoder function `f` meeting the per-job contract on the jobs the plans ask
-for, and any clips with their cut ranges: running `exportTimeline` on the
-planner's plans, with `f` as the encoder, yields a stream that decodes to the
-requested source pictures of every clip, in timeline order (exactly for copied
-frames, `approx`-close for re-encoded ones). -/
-theorem exportTimeline_correct (cuts : List (Stream α × DisplayRange)) (f : Job → Stream α)
-    (hwf : ∀ x ∈ cuts, x.1.WellFormed) (hR : ∀ p, approx p p)
-    (henc : ∀ i (h : i < cuts.length) ks, Segment.encode ks ∈ plan cuts[i].1 cuts[i].2 →
-      JobContract c approx cuts[i].1 ks (f ⟨i, ks⟩)) :
-    AllRel approx
-      (decode c (concatStreams
-        ((exportTimeline (m := PureEncode α) (cuts.map fun x => (x.1, plan x.1 x.2))).run f).flatten))
-      (cuts.map fun x => target c x.1 (plan x.1 x.2)).flatten := by
-  have hok := renderFrom_ok (c := c) f hR 0 (cuts.map fun x => (x.1, plan x.1 x.2))
-    fun j hj => by
+/-- Proof of `exportTimeline_correct` (`Correctness.lean`). -/
+theorem exportWith_correct (c : Codec α Pic) (approx : Pic → Pic → Prop)
+    (timeline : Timeline α) (encode : Job → Stream α)
+    (approxRefl : ∀ p, approx p p) (wellFormed : timeline.WellFormed)
+    (contract : EncoderContract c approx timeline encode) :
+    DecodesTo c approx (timeline.exportWith encode) (timeline.target c) := by
+  have hok := renderFrom_ok (c := c) encode approxRefl 0
+    (timeline.map fun cut => (cut.source, cut.plan)) fun j hj => by
+      have hj' : j < timeline.length := by simpa using hj
       simp only [List.getElem_map, Nat.zero_add]
-      have hj' : j < cuts.length := by simpa using hj
-      exact ⟨hwf _ (List.getElem_mem hj'), plan_valid _ _, henc j hj'⟩
+      exact ⟨wellFormed _ (List.getElem_mem hj'), plan_valid _ _,
+        fun ks hks => contract ⟨j, ks⟩ _ (List.getElem?_eq_getElem hj') hks⟩
+  unfold DecodesTo Timeline.exportWith Timeline.target; dsimp only
   rw [exportTimeline, exportFrom_run, decode_concatStreams c _ hok.1]
-  simpa [List.map_map, Function.comp_def] using hok.2
+  have hcut : Cut.target c = fun cut : Cut α => target c cut.source cut.plan := rfl
+  simpa [List.map_map, Function.comp_def, hcut] using hok.2
 
 end VeriCut

@@ -19,6 +19,11 @@ inductive AllRel {β γ : Type} (R : β → γ → Prop) : List β → List γ �
   | nil : AllRel R [] []
   | cons {x y xs ys} : R x y → AllRel R xs ys → AllRel R (x :: xs) (y :: ys)
 
+/-- `s` decodes to pictures pointwise `approx`-close to `pics`, one per packet. -/
+def DecodesTo {α Pic : Type} (c : Codec α Pic) (approx : Pic → Pic → Prop) (s : Stream α)
+    (pics : List Pic) : Prop :=
+  AllRel approx (decode c s) pics
+
 /-- One piece of an export plan. Both carry source decode-order indices. -/
 inductive Segment
   | copy (ks : List Nat)
@@ -39,7 +44,7 @@ decoded pictures are pointwise `approx`-close to the pictures it was given. -/
 structure Encoder (α Pic : Type) (c : Codec α Pic) (approx : Pic → Pic → Prop) where
   encode : List Pic → Stream α
   wellFormed : ∀ pics, (encode pics).WellFormed
-  faithful : ∀ pics, AllRel approx (decode c (encode pics)) pics
+  faithful : ∀ pics, DecodesTo c approx (encode pics) pics
 
 variable {α Pic : Type} {c : Codec α Pic} {approx : Pic → Pic → Prop}
 
@@ -72,7 +77,7 @@ self-contained stream that decodes pointwise `approx`-close to those frames'
 source pictures. -/
 def JobContract (c : Codec α Pic) (approx : Pic → Pic → Prop) (s : Stream α)
     (ks : List Nat) (out : Stream α) : Prop :=
-  out.WellFormed ∧ AllRel approx (decode c out) (ks.map (picture c s))
+  out.WellFormed ∧ DecodesTo c approx out (ks.map (picture c s))
 
 /-- A plan may only copy dependency-closed packet sets. -/
 def PlanValid (s : Stream α) (plan : List Segment) : Prop :=

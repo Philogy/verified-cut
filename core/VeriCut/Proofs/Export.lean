@@ -67,10 +67,10 @@ up to `approx` on re-encoded frames. -/
 theorem export_correct (s : Stream α) (enc : Encoder α Pic c approx)
     (plan : List Segment) (hwf : s.WellFormed) (hplan : PlanValid s plan)
     (hR : ∀ p, approx p p) :
-    AllRel approx (decode c (exportPlan s enc plan)) (target c s plan) := by
+    DecodesTo c approx (exportPlan s enc plan) (target c s plan) := by
   have hseg : ∀ seg ∈ plan, ∀ ks, seg = .copy ks → CopySet s ks := by
     intro seg hmem ks h; subst h; exact hplan ks hmem
-  unfold exportPlan target
+  unfold DecodesTo exportPlan target
   rw [decode_concatStreams c _ (by
     intro x hx
     obtain ⟨seg, hmem, rfl⟩ := List.mem_map.mp hx

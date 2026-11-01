@@ -48,7 +48,7 @@ buffer. So in the MP4 bridge, a non-keyframe depends on the previous packet and
 an IDR keyframe depends on nothing, which is the definition of IDR. That is
 faithful even with B-frames and long-term references.
 
-| Theorem (`core/VeriCut/Proofs/`) | Statement |
+| Theorem (`core/VeriCut/Proofs/`; the main one restated in `Correctness.lean`) | Statement |
 |---|---|
 | `picture_extract`, `decode_extract` | Copying a dependency-closed packet set byte-for-byte yields exactly the source pictures. |
 | `decode_concatStreams` | Concatenating self-contained streams decodes to the concatenation of their decodes. |
@@ -72,9 +72,11 @@ Read these before trusting the theorems:
 
 - **Spec definitions**: `Spec/Stream.lean` (`Packet`, `Codec`, `picture`, `decode`,
   `DepClosed`, `CopySet`, `extract`, `shift`, `concatStreams`), `Spec/Export.lean`
-  (`Segment`, `Encoder`, `exportPlan`, `target`, `PlanValid`, `Job`, `JobContract`), `Spec/Planner.lean`
-  (`wanted`, `copyable`).
-- **Encoder contract** (`Encoder` / per-job `JobContract` in `Spec/Export.lean`): the re-encoder outputs
+  (`DecodesTo`, `Segment`, `Encoder`, `exportPlan`, `target`, `PlanValid`, `Job`, `JobContract`),
+  `Spec/Planner.lean` (`wanted`, `copyable`), `Spec/Timeline.lean` (`Cut`, `Timeline`,
+  `Cut.plan`, `Cut.target`, `Timeline.target`, `Timeline.WellFormed`, `EncoderContract`,
+  `Timeline.exportWith`, which runs `exportTimeline` and `plan`).
+- **Encoder contract** (`Encoder` / per-job `JobContract` in `Spec/Export.lean`, `EncoderContract` in `Spec/Timeline.lean`): the re-encoder outputs
   a self-contained stream that decodes approx-close to its input. In practice
   this is ffmpeg calling VideoToolbox (`h264_videotoolbox`) or libx264. The CLI
   checks frame count, codec, no reordering, and a leading sync sample.
