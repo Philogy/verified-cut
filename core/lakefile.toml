@@ -1,0 +1,10 @@
+name = "smartcut"
+version = "0.1.0"
+defaultTargets = ["SmartCut", "smartcut"]
+
+[[lean_lib]]
+name = "SmartCut"
+
+[[lean_exe]]
+name = "smartcut"
+root = "Main"

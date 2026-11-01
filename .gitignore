@@ -1,0 +1,5 @@
+core/.lake/
+app/.build/
+app/.swiftpm/
+*.tmp.mp4
+__pycache__/
