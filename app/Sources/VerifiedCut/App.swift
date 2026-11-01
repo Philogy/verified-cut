@@ -13,7 +13,7 @@ struct VerifiedCutApp: App {
     var body: some Scene {
         WindowGroup("Verified Cut") {
             ContentView()
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 900, minHeight: 420)
                 .preferredColorScheme(.dark)
         }
     }

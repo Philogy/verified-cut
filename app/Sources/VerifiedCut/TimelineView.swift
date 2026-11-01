@@ -14,9 +14,9 @@ struct TimelineLayout {
     let pps: Double
 
     init(clips: [Clip], starts: [Double], frozen: [Clip.ID: Double]?, pps: Double) {
-        origins = zip(clips, starts).map { c, s in frozen?[c.id] ?? s - c.seconds(c.inFrame) }
+        origins = zip(clips, starts).map { c, s in frozen?[c.id] ?? s - c.seconds(c.inSample) }
         t0 = min(0, origins.min() ?? 0)
-        let ends = zip(clips, origins).map { c, o in o + c.seconds(c.probe.frameCount) }
+        let ends = zip(clips, origins).map { c, o in o + c.seconds(c.probe.samples) }
         tEnd = max(starts.last.map { $0 + (clips.last.map { $0.seconds($0.length) } ?? 0) } ?? 0, ends.max() ?? 0)
         self.pps = pps
     }
@@ -26,10 +26,11 @@ struct TimelineLayout {
     var width: CGFloat { x(tEnd) + Self.pad }
 }
 
-func timecode(_ s: Double, fine: Bool = true) -> String {
+/// m:ss with `digits` decimals.
+func timecode(_ s: Double, digits: Int = 3) -> String {
     let s = max(0, s)
-    return fine ? String(format: "%d:%05.2f", Int(s) / 60, s.truncatingRemainder(dividingBy: 60))
-                : String(format: "%d:%02d", Int(s) / 60, Int(s) % 60)
+    let width = digits == 0 ? 2 : digits + 3
+    return String(format: "%d:%0\(width).\(digits)f", Int(s) / 60, s.truncatingRemainder(dividingBy: 60))
 }
 
 private let laneColors: [Color] = [.blue, .teal, .purple, .orange, .pink, .green, .indigo, .mint]
@@ -40,14 +41,17 @@ struct TimelineEditor: View {
     @State private var pps: Double = 40
     @State private var pinchBase: Double?
     @State private var visibleWidth: CGFloat = 600
+    /// Horizontal span of the timeline currently on screen, in content coordinates.
+    @State private var visible: ClosedRange<CGFloat> = 0...600
     /// Clip origins frozen for the length of a trim drag, so the dragged edge follows the cursor;
     /// later clips ripple when the drag ends.
     @State private var frozen: [Clip.ID: Double]?
 
-    static let laneHeight: CGFloat = 70
+    static let laneHeight: CGFloat = 84
     static let rulerHeight: CGFloat = 28
-    static let headerWidth: CGFloat = 250
-    static let ppsRange = 0.5...800.0
+    static let headerWidth: CGFloat = 270
+    /// From an hour in a few hundred points to ~10 samples per point at 44.1 kHz.
+    static let ppsRange = 0.05...4000.0
 
     var body: some View {
         let layout = TimelineLayout(clips: timeline.clips, starts: timeline.starts, frozen: frozen, pps: pps)
@@ -57,9 +61,9 @@ struct TimelineEditor: View {
                     zoomControls.frame(height: Self.rulerHeight)
                     ForEach(Array($timeline.clips.enumerated()), id: \.element.id) { i, $clip in
                         LaneHeader(clip: $clip, index: i, count: timeline.clips.count, color: laneColors[clip.tint % laneColors.count],
-                                   onCommit: { Task { await timeline.refresh() } },
-                                   onShift: { d in Task { await timeline.shift(clip.id, by: d) } },
-                                   onRemove: { Task { await timeline.remove(clip) } })
+                                   onCommit: { timeline.refresh() },
+                                   onShift: { d in timeline.shift(clip.id, by: d) },
+                                   onRemove: { timeline.remove(clip) })
                             .frame(height: Self.laneHeight)
                     }
                 }
@@ -68,7 +72,7 @@ struct TimelineEditor: View {
                 Divider()
                 ScrollView(.horizontal) {
                     VStack(spacing: 0) {
-                            Ruler(layout: layout, duration: timeline.duration)
+                            Ruler(layout: layout, duration: timeline.duration, visible: visible)
                                 .frame(height: Self.rulerHeight)
                                 .contentShape(Rectangle())
                                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("timeline"))
@@ -78,9 +82,10 @@ struct TimelineEditor: View {
                                 .accessibilityLabel("Ruler")
                             ForEach(Array($timeline.clips.enumerated()), id: \.element.id) { i, $clip in
                                 ClipLane(clip: $clip, start: timeline.starts[i], origin: layout.origins[i], layout: layout,
+                                         visible: visible,
                                          color: laneColors[clip.tint % laneColors.count],
                                          onBegin: { frozen = Dictionary(uniqueKeysWithValues: zip(timeline.clips.map(\.id), layout.origins)) },
-                                         onEnd: { frozen = nil; Task { await timeline.refresh() } },
+                                         onEnd: { frozen = nil; timeline.refresh() },
                                          onSeek: { timeline.seek(to: $0) })
                                     .frame(height: Self.laneHeight)
                                     .background(i % 2 == 0 ? Color(white: 0.15) : Color(white: 0.165))
@@ -90,6 +95,7 @@ struct TimelineEditor: View {
                     .frame(width: max(layout.width, visibleWidth), alignment: .leading)
                     .coordinateSpace(name: "timeline")
                 }
+                .onScrollGeometryChange(for: ClosedRange<CGFloat>.self, of: { $0.visibleRect.minX...$0.visibleRect.maxX }) { visible = $1 }
                 .background(GeometryReader { g in
                     Color.clear.onAppear { visibleWidth = g.size.width }
                         .onChange(of: g.size.width) { visibleWidth = $1 }
@@ -97,7 +103,7 @@ struct TimelineEditor: View {
             }
             .overlay(alignment: .center) {
                 if timeline.clips.isEmpty {
-                    Text("Drop clips here, or Import…").foregroundStyle(.secondary).padding(.top, 40)
+                    Text("Drop audio here, or Import…").foregroundStyle(.secondary).padding(.top, 40)
                 }
             }
         }
@@ -122,12 +128,18 @@ struct TimelineEditor: View {
 
     private var zoomControls: some View {
         HStack(spacing: 6) {
-            Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
+            Button { pps = clampZoom(pps / 2) } label: { Image(systemName: "minus.magnifyingglass") }
+                .buttonStyle(.borderless).keyboardShortcut("-")
+                .help("Zoom out (⌘−)")
+                .accessibilityIdentifier("timeline.zoomOut")
             Slider(value: Binding(get: { log(pps) }, set: { pps = clampZoom(exp($0)) }),
                    in: log(Self.ppsRange.lowerBound)...log(Self.ppsRange.upperBound))
                 .controlSize(.mini)
                 .accessibilityIdentifier("timeline.zoom")
-            Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
+            Button { pps = clampZoom(pps * 2) } label: { Image(systemName: "plus.magnifyingglass") }
+                .buttonStyle(.borderless).keyboardShortcut("=")
+                .help("Zoom in (⌘+)")
+                .accessibilityIdentifier("timeline.zoomIn")
             Button("Fit") { fit(TimelineLayout(clips: timeline.clips, starts: timeline.starts, frozen: nil, pps: pps)) }
                 .controlSize(.small)
                 .accessibilityIdentifier("timeline.fit")
@@ -145,7 +157,7 @@ struct TimelineEditor: View {
     }
 }
 
-/// Fixed-width column left of each lane: name, exact In/Out frames, order and removal.
+/// Fixed-width column left of each lane: name, exact In/Out samples, order and removal.
 struct LaneHeader: View {
     @Binding var clip: Clip
     let index: Int
@@ -160,8 +172,15 @@ struct LaneHeader: View {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 4, height: 14)
                 Text(clip.name).font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                    .help(clip.url.path)
+                    .help((clip.convertedFrom ?? clip.file).path)
                     .accessibilityIdentifier("clip.name")
+                if let src = clip.convertedFrom {
+                    Image(systemName: "arrow.triangle.2.circlepath").font(.caption2).foregroundStyle(.secondary)
+                        .help("Converted on import with ffmpeg, outside the verified boundary: \(src.lastPathComponent) → \(clip.file.lastPathComponent)")
+                        .accessibilityElement()
+                        .accessibilityLabel("Converted with ffmpeg")
+                        .accessibilityIdentifier("clip.converted")
+                }
                 Spacer(minLength: 0)
                 Button { onShift(-1) } label: { Image(systemName: "chevron.up") }
                     .disabled(index == 0).help("Move earlier")
@@ -174,15 +193,13 @@ struct LaneHeader: View {
                     .accessibilityIdentifier("clip.remove")
             }
             .buttonStyle(.borderless)
-            Text("\(clip.length) frames · \(timecode(clip.seconds(clip.length)))")
+            Text("\(clip.length) samples · \(timecode(clip.seconds(clip.length)))")
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 .accessibilityIdentifier("clip.length")
-            HStack(spacing: 10) {
-                frameControl("In", id: "clip.in", value: $clip.inFrame, range: 0...(clip.outFrame - 1))
-                frameControl("Out", id: "clip.out", value: $clip.outFrame, range: (clip.inFrame + 1)...clip.probe.frameCount)
-            }
-            .font(.caption)
+            sampleControl("In", id: "clip.in", value: $clip.inSample, range: 0...(clip.outSample - 1))
+            sampleControl("Out", id: "clip.out", value: $clip.outSample, range: (clip.inSample + 1)...clip.probe.samples)
         }
+        .font(.caption)
         .padding(.horizontal, 10)
         .frame(maxHeight: .infinity)
         .overlay(alignment: .bottom) { Divider() }
@@ -190,27 +207,21 @@ struct LaneHeader: View {
         .accessibilityIdentifier("clip.row")
     }
 
-    private func frameControl(_ label: String, id: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
-        HStack(spacing: 2) {
-            Text(label).foregroundStyle(.secondary)
-            Text("\(value.wrappedValue)").monospacedDigit().frame(minWidth: 34, alignment: .trailing)
+    /// Exact sample entry: type a number, or nudge one sample with the stepper.
+    private func sampleControl(_ label: String, id: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        let clamped = Binding(get: { value.wrappedValue },
+                              set: { value.wrappedValue = min(max($0, range.lowerBound), range.upperBound) })
+        return HStack(spacing: 4) {
+            Text(label).foregroundStyle(.secondary).frame(width: 24, alignment: .leading)
+            TextField(label, value: clamped, format: .number.grouping(.never))
+                .textFieldStyle(.roundedBorder).monospacedDigit().controlSize(.small)
+                .frame(width: 96)
+                .onSubmit(onCommit)
                 .accessibilityIdentifier("\(id).value")
-            Stepper("", value: value, in: range, onEditingChanged: { editing in if !editing { onCommit() } })
+            Stepper("", value: clamped, in: range, onEditingChanged: { editing in if !editing { onCommit() } })
                 .labelsHidden().controlSize(.mini)
                 .accessibilityIdentifier("\(id).stepper")
-            Button { snap(value) } label: { Image(systemName: "key") }
-                .buttonStyle(.borderless)
-                .help("Snap to the nearest keyframe")
-                .accessibilityIdentifier("\(id).snap")
-        }
-    }
-
-    private func snap(_ value: Binding<Int>) {
-        let ks = clip.probe.keyframes + [clip.probe.frameCount]
-        if let k = ks.min(by: { abs($0 - value.wrappedValue) < abs($1 - value.wrappedValue) }) {
-            value.wrappedValue = k
-            if clip.outFrame <= clip.inFrame { clip.outFrame = min(clip.inFrame + 1, clip.probe.frameCount) }
-            onCommit()
+            Text(timecode(clip.seconds(value.wrappedValue))).foregroundStyle(.tertiary).monospacedDigit()
         }
     }
 }
@@ -222,33 +233,38 @@ struct ClipLane: View {
     let start: Double
     let origin: Double
     let layout: TimelineLayout
+    let visible: ClosedRange<CGFloat>
     let color: Color
     var onBegin: () -> Void
     var onEnd: () -> Void
     var onSeek: (Double) -> Void
 
     @State private var dragFrom: Int?
-    private let thumbs = Thumbnails.shared
+    private let waveforms = Waveforms.shared
     static let handleWidth: CGFloat = 9
-    /// Within this distance a dragged edge sticks to a keyframe, where the cut is free.
-    static let snapDistance: CGFloat = 6
 
     var body: some View {
         let pps = layout.pps
-        let full = CGFloat(clip.seconds(clip.probe.frameCount) * pps)
-        let head = CGFloat(clip.seconds(clip.inFrame) * pps)
+        let full = CGFloat(clip.seconds(clip.probe.samples) * pps)
+        let head = CGFloat(clip.seconds(clip.inSample) * pps)
         let kept = max(CGFloat(clip.seconds(clip.length) * pps), 2)
+        // Only the on-screen part of the waveform is drawn: a long source at high zoom is millions of points wide.
+        let x0 = layout.x(origin)
+        let lo = min(max(visible.lowerBound - x0, 0), full)
+        let hi = min(max(visible.upperBound - x0, 0), full)
         ZStack(alignment: .topLeading) {
-            Filmstrip(images: thumbs.strips[clip.url], color: color)
+            LinearGradient(colors: [color.opacity(0.35), color.opacity(0.2)], startPoint: .top, endPoint: .bottom)
                 .frame(width: full)
+            if let peaks = waveforms.peaks[clip.file], hi > lo {
+                Waveform(peaks: peaks, full: full, from: lo, color: color)
+                    .frame(width: hi - lo)
+                    .offset(x: lo)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("clip.waveform")
+                    .accessibilityLabel("Waveform")
+            }
             Rectangle().fill(.black.opacity(0.62)).frame(width: head)
             Rectangle().fill(.black.opacity(0.62)).frame(width: max(0, full - head - kept)).offset(x: head + kept)
-            KeyframeTicks(clip: clip)
-                .frame(width: full, height: 7)
-                .offset(y: TimelineEditor.laneHeight - 15)
-                .accessibilityElement()
-                .accessibilityIdentifier("clip.keyframes")
-                .accessibilityLabel("Keyframes")
             keptRegion(width: kept).offset(x: head)
             handle(.in).offset(x: head)
             handle(.out).offset(x: head + kept - Self.handleWidth)
@@ -257,7 +273,7 @@ struct ClipLane: View {
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .offset(x: layout.x(origin), y: 5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onAppear { thumbs.request(clip.url, duration: clip.seconds(clip.probe.frameCount)) }
+        .onAppear { waveforms.request(clip.file, samples: clip.probe.samples) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("clip.lane")
     }
@@ -293,112 +309,108 @@ struct ClipLane: View {
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("timeline"))
                 .onChanged { v in drag(edge, by: v.translation.width) }
                 .onEnded { _ in dragFrom = nil; onEnd() })
-            .help(edge == .in ? "Drag to trim the start" : "Drag to trim the end")
+            .help(edge == .in ? "Drag to trim the start (snaps to samples)" : "Drag to trim the end (snaps to samples)")
             .accessibilityElement()
             .accessibilityIdentifier(id)
             .accessibilityLabel(edge == .in ? "In point" : "Out point")
-            .accessibilityValue("\(edge == .in ? clip.inFrame : clip.outFrame)")
+            .accessibilityValue("\(edge == .in ? clip.inSample : clip.outSample)")
             .accessibilityAdjustableAction { dir in
                 let d = dir == .increment ? 1 : dir == .decrement ? -1 : 0
-                set(edge, edge == .in ? clip.inFrame + d : clip.outFrame + d)
+                set(edge, edge == .in ? clip.inSample + d : clip.outSample + d)
                 onEnd()
             }
     }
 
     private func drag(_ edge: Edge, by dx: CGFloat) {
         if dragFrom == nil {
-            dragFrom = edge == .in ? clip.inFrame : clip.outFrame
+            dragFrom = edge == .in ? clip.inSample : clip.outSample
             onBegin()
         }
         guard let from = dragFrom else { return }
-        var f = clip.frame(at: clip.seconds(from) + Double(dx) / layout.pps)
-        let ks = clip.probe.keyframes + [clip.probe.frameCount]
-        if let k = ks.min(by: { abs($0 - f) < abs($1 - f) }),
-           CGFloat(abs(clip.seconds(k - f)) * layout.pps) <= Self.snapDistance {
-            f = k
-        }
-        set(edge, f)
+        set(edge, clip.sample(at: clip.seconds(from) + Double(dx) / layout.pps))
     }
 
-    private func set(_ edge: Edge, _ f: Int) {
+    private func set(_ edge: Edge, _ n: Int) {
         switch edge {
-        case .in: clip.inFrame = min(max(f, 0), clip.outFrame - 1)
-        case .out: clip.outFrame = min(max(f, clip.inFrame + 1), clip.probe.frameCount)
+        case .in: clip.inSample = min(max(n, 0), clip.outSample - 1)
+        case .out: clip.outSample = min(max(n, clip.inSample + 1), clip.probe.samples)
         }
     }
 }
 
-struct Filmstrip: View {
-    let images: [CGImage?]?
+/// Min/max envelope of a source, drawn from point `from` of its `full`-wide lane rectangle
+/// for as wide as the view is: one vertical bar per point, covering the buckets under it.
+struct Waveform: View {
+    let peaks: VeriCut.Peaks
+    let full: CGFloat
+    let from: CGFloat
     let color: Color
 
     var body: some View {
-        GeometryReader { g in
-            let n = images?.count ?? 1
-            let w = g.size.width / CGFloat(n)
-            ZStack(alignment: .leading) {
-                LinearGradient(colors: [color.opacity(0.55), color.opacity(0.3)], startPoint: .top, endPoint: .bottom)
-                if let images {
-                    // Tiles narrower than this would just be noise, so draw fewer, wider ones.
-                    let stride = max(1, Int((28 / w).rounded(.up)))
-                    ForEach(Array(Swift.stride(from: 0, to: n, by: stride)), id: \.self) { i in
-                        if let img = images[i] {
-                            Image(decorative: img, scale: 1)
-                                .resizable().aspectRatio(contentMode: .fill)
-                                .frame(width: w * CGFloat(min(stride, n - i)), height: g.size.height)
-                                .clipped()
-                                .offset(x: w * CGFloat(i))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct KeyframeTicks: View {
-    let clip: Clip
-
-    var body: some View {
         Canvas { ctx, size in
-            let n = CGFloat(max(clip.probe.frameCount, 1))
-            for k in clip.probe.keyframes {
-                ctx.fill(Path(CGRect(x: size.width * CGFloat(k) / n, y: 0, width: 1, height: size.height)),
-                         with: .color(.white.opacity(0.7)))
+            let n = peaks.min.count
+            guard n > 0, full > 0 else { return }
+            let mid = size.height / 2, amp = size.height / 2 - 3
+            let perPoint = CGFloat(n) / full
+            var path = Path()
+            var x: CGFloat = 0
+            while x < size.width {
+                let b0 = min(Int((from + x) * perPoint), n - 1)
+                let b1 = min(max(Int((from + x + 1) * perPoint), b0 + 1), n)
+                var lo: Float = 1, hi: Float = -1
+                for b in b0..<b1 {
+                    lo = Swift.min(lo, peaks.min[b])
+                    hi = Swift.max(hi, peaks.max[b])
+                }
+                let top = mid - CGFloat(hi) * amp, bottom = mid - CGFloat(lo) * amp
+                path.addRect(CGRect(x: x, y: top, width: 1, height: Swift.max(bottom - top, 0.5)))
+                x += 1
             }
+            ctx.fill(path, with: .color(color.mix(with: .white, by: 0.35)))
+            ctx.fill(Path(CGRect(x: 0, y: mid, width: size.width, height: 0.5)), with: .color(.white.opacity(0.15)))
         }
-        .help("Ticks: keyframes (cuts there are free)")
         .allowsHitTesting(false)
     }
 }
 
+/// Time ruler. Like the waveforms, it only draws the span on screen; the whole width still takes clicks.
 struct Ruler: View {
     let layout: TimelineLayout
     let duration: Double
+    let visible: ClosedRange<CGFloat>
 
     var body: some View {
-        Canvas { ctx, size in
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.18)))
-            // Outside the output (trimmed heads before 0, tails after the end): darker.
-            ctx.fill(Path(CGRect(x: 0, y: 0, width: layout.x(0), height: size.height)), with: .color(.black.opacity(0.3)))
-            ctx.fill(Path(CGRect(x: layout.x(duration), y: 0, width: max(0, size.width - layout.x(duration)), height: size.height)),
-                     with: .color(.black.opacity(0.3)))
-            let steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
-            let step = steps.first { $0 * layout.pps >= 80 } ?? 3600
-            let minor = step / (step == 15 || step == 30 ? 3 : 5)
-            var t = (layout.t0 / minor).rounded(.down) * minor
-            while t <= layout.t(size.width) {
-                let x = layout.x(t)
-                let major = abs((t / step).rounded() * step - t) < minor / 2
-                ctx.fill(Path(CGRect(x: x, y: size.height - (major ? 10 : 5), width: 1, height: major ? 10 : 5)),
-                         with: .color(.white.opacity(major ? 0.6 : 0.3)))
-                if major && t >= -1e-9 && x + 40 < size.width {
-                    ctx.draw(Text(timecode(t, fine: step < 1)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary),
-                             at: CGPoint(x: x + 3, y: 2), anchor: .topLeading)
+        let lo = max(visible.lowerBound, 0)
+        let w = max(visible.upperBound - lo, 0)
+        Color(white: 0.18).overlay(alignment: .topLeading) {
+            Canvas { ctx, size in
+                // Canvas coordinates start at `lo`; X is a timeline x.
+                func X(_ t: Double) -> CGFloat { layout.x(t) - lo }
+                // Outside the output (trimmed heads before 0, tails after the end): darker.
+                ctx.fill(Path(CGRect(x: 0, y: 0, width: max(0, X(0)), height: size.height)), with: .color(.black.opacity(0.3)))
+                ctx.fill(Path(CGRect(x: max(0, X(duration)), y: 0, width: max(0, size.width - X(duration)), height: size.height)),
+                         with: .color(.black.opacity(0.3)))
+                let steps = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600]
+                let step = steps.first { $0 * layout.pps >= 80 } ?? 3600
+                let minor = step / (step == 15 || step == 30 ? 3 : 5)
+                let digits = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0
+                var t = (layout.t(lo) / minor).rounded(.down) * minor
+                while t <= layout.t(lo + size.width) {
+                    let x = X(t)
+                    let major = abs((t / step).rounded() * step - t) < minor / 2
+                    ctx.fill(Path(CGRect(x: x, y: size.height - (major ? 10 : 5), width: 1, height: major ? 10 : 5)),
+                             with: .color(.white.opacity(major ? 0.6 : 0.3)))
+                    if major && t >= -1e-9 {
+                        ctx.draw(Text(timecode(t, digits: digits)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary),
+                                 at: CGPoint(x: x + 3, y: 2), anchor: .topLeading)
+                    }
+                    t += minor
                 }
-                t += minor
+                ctx.fill(Path(CGRect(x: 0, y: size.height - 1, width: size.width, height: 1)), with: .color(.black.opacity(0.5)))
             }
-            ctx.fill(Path(CGRect(x: 0, y: size.height - 1, width: size.width, height: 1)), with: .color(.black.opacity(0.5)))
+            .frame(width: w)
+            .offset(x: lo)
+            .allowsHitTesting(false)
         }
     }
 }

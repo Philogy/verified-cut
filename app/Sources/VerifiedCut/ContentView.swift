@@ -1,5 +1,4 @@
 import AppKit
-import AVKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -8,40 +7,30 @@ struct ContentView: View {
     @State private var importing = false
 
     var body: some View {
-        VSplitView {
-            VideoPlayer(player: timeline.player)
-                // VideoPlayer drops the identifier unless it gets its own container element.
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("preview.player")
-                .background(.black)
-                .frame(minHeight: 240, idealHeight: 420)
-            VStack(spacing: 0) {
-                toolbar
+        VStack(spacing: 0) {
+            toolbar
+            Divider()
+            TimelineEditor(timeline: timeline)
+            ZStack {
                 Divider()
-                TimelineEditor(timeline: timeline)
-                ZStack {
-                    Divider()
-                    if timeline.busy {
-                        BusyBar()
-                            .accessibilityElement()
-                            .accessibilityLabel("Exporting")
-                            .accessibilityIdentifier("export.progress")
-                            .transition(.opacity)
-                    }
+                if timeline.busy {
+                    BusyBar()
+                        .accessibilityElement()
+                        .accessibilityLabel("Exporting")
+                        .accessibilityIdentifier("export.progress")
+                        .transition(.opacity)
                 }
-                .animation(.easeInOut(duration: 0.2), value: timeline.busy)
-                Text(timeline.status)
-                    .font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .accessibilityIdentifier("status")
             }
-            .frame(minHeight: 220, idealHeight: 300)
+            .animation(.easeInOut(duration: 0.2), value: timeline.busy)
+            Text(timeline.status)
+                .font(.callout).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .accessibilityIdentifier("status")
         }
         .background(Color(white: 0.11))
-        .fileImporter(isPresented: $importing,
-                      allowedContentTypes: [.mpeg4Movie, .quickTimeMovie],
-                      allowsMultipleSelection: true) { result in
+        // Anything ffmpeg reads; non-WAV/FLAC files are converted on import (Importer).
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
                 Task { await timeline.add(urls) }
             }
@@ -61,13 +50,22 @@ struct ContentView: View {
             Text("\(timecode(timeline.playhead)) / \(timecode(timeline.duration))")
                 .font(.callout.monospacedDigit())
                 .accessibilityIdentifier("transport.time")
-            Text("\(timeline.frameCount) frames")
+            Text("\(timeline.sampleCount) samples")
                 .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                .accessibilityIdentifier("timeline.frames")
+                .accessibilityIdentifier("timeline.samples")
             Spacer()
-            Text(timeline.planSummary).font(.callout).foregroundStyle(.secondary)
-                .accessibilityIdentifier("plan.summary")
+            if let f = timeline.format {
+                Text(f.description).font(.callout).foregroundStyle(.secondary)
+                    .help("Project format, set by the first clip. Other imports are converted to it with ffmpeg.")
+                    .accessibilityIdentifier("project.format")
+            }
             Spacer()
+            Picker("Level", selection: $timeline.level) {
+                ForEach(0...8, id: \.self) { Text("\($0)").tag($0) }
+            }
+            .fixedSize()
+            .help("FLAC compression level: higher is smaller and slower to encode, never lossy")
+            .accessibilityIdentifier("export.level")
             Button { chooseExport() } label: { Label("Export…", systemImage: "square.and.arrow.up") }
                 .keyboardShortcut("e")
                 .buttonStyle(.borderedProminent)
@@ -81,8 +79,8 @@ struct ContentView: View {
     private func chooseExport() {
         guard !timeline.busy else { return }
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.mpeg4Movie]
-        panel.nameFieldStringValue = "export.mp4"
+        panel.allowedContentTypes = [UTType(filenameExtension: "flac") ?? .audio]
+        panel.nameFieldStringValue = "export.flac"
         if panel.runModal() == .OK, let url = panel.url {
             Task { await timeline.export(to: url) }
         }

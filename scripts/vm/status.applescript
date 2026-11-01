@@ -1,6 +1,6 @@
--- Print the plan summary, the status line and one line per clip row.
+-- Print the project format, total samples, the status line and one line per clip row.
 on run
-	set out to "plan: " & idValue("plan.summary") & linefeed & "frames: " & idValue("timeline.frames") & linefeed & "status: " & idValue("status") & linefeed
+	set out to "format: " & idValue("project.format") & linefeed & "samples: " & idValue("timeline.samples") & linefeed & "status: " & idValue("status") & linefeed
 	set n to count of allById(appWindow(), "clip.row")
 	repeat with i from 1 to n
 		set r to clipRow(i)

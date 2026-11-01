@@ -62,9 +62,13 @@ setup)
 install)
 	# Build on the host (the guest has no Lean), then wrap the SwiftPM binary in a minimal .app
 	# in the guest so `open` launches it into the GUI session.
-	(cd "$ROOT/core" && lake build vericut)
+	# VERICUT_BIN=app/dev/vericut-stub installs the stub instead of building core/.
+	if [ -n "${VERICUT_BIN:-}" ]; then bin=$VERICUT_BIN; else
+		(cd "$ROOT/core" && lake build vericut)
+		bin=$ROOT/core/.lake/build/bin/vericut
+	fi
 	(cd "$ROOT/app" && swift build -c release)
-	put "$ROOT/core/.lake/build/bin/vericut" "$GBIN/vericut"
+	put "$bin" "$GBIN/vericut"
 	put "$(cd "$ROOT/app" && swift build -c release --show-bin-path)/VerifiedCut" "$GAPP/Contents/MacOS/VerifiedCut"
 	put "$ROOT/scripts/ocr.swift" "$GBIN/ocr.swift"
 	ssh_vm "chmod +x '$GBIN/vericut' '$GAPP/Contents/MacOS/VerifiedCut'

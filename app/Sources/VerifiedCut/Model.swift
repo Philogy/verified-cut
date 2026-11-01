@@ -2,41 +2,40 @@ import AVFoundation
 import Foundation
 import Observation
 
-/// One clip on the timeline: a source file and a half-open range of display frames.
+/// One clip on the timeline: a source file and a half-open range of sample frames.
 struct Clip: Identifiable, Equatable {
     let id = UUID()
-    let url: URL
+    /// What `vericut` reads: the picked file, or its ffmpeg conversion to the project format.
+    let file: URL
     let probe: VeriCut.Probe
-    var inFrame: Int
-    var outFrame: Int
+    /// The file the user picked, if it had to be converted on import.
+    let convertedFrom: URL?
+    var inSample: Int
+    var outSample: Int
     /// Lane colour, fixed when the clip is added so it follows the clip when reordered.
     var tint = 0
 
     static func == (a: Clip, b: Clip) -> Bool {
-        a.id == b.id && a.inFrame == b.inFrame && a.outFrame == b.outFrame
+        a.id == b.id && a.inSample == b.inSample && a.outSample == b.outSample
     }
 
-    var name: String { url.lastPathComponent }
-    var length: Int { outFrame - inFrame }
+    var name: String { (convertedFrom ?? file).lastPathComponent }
+    var length: Int { outSample - inSample }
 
-    /// Seconds spanned by `frames` frames of this clip's source.
-    func seconds(_ frames: Int) -> Double {
-        Double(frames * probe.frameDuration) / Double(probe.timescale)
-    }
+    func seconds(_ samples: Int) -> Double { Double(samples) / Double(probe.sampleRate) }
 
-    /// Nearest display frame to `t` seconds into the source.
-    func frame(at t: Double) -> Int {
-        Int((t * Double(probe.timescale) / Double(probe.frameDuration)).rounded())
-    }
+    /// Nearest sample frame to `t` seconds into the source.
+    func sample(at t: Double) -> Int { Int((t * Double(probe.sampleRate)).rounded()) }
 }
 
 @MainActor
 @Observable
 final class Timeline {
     var clips: [Clip] = []
-    var status: String = "Import clips to begin."
-    var planSummary: String = ""
+    var status: String = "Import audio to begin."
     var busy = false
+    /// FLAC compression level passed to `vericut export`.
+    var level = 5
     var player = AVPlayer()
     /// Output time of the preview player, in seconds.
     var playhead: Double = 0
@@ -54,6 +53,9 @@ final class Timeline {
         }
     }
 
+    /// Every clip shares this format (the first clip's); imports are converted to it.
+    var format: VeriCut.Format? { clips.first?.probe.audioFormat }
+
     /// Output start time of each clip, in seconds; the same layout the preview composition uses.
     var starts: [Double] {
         var t = 0.0
@@ -61,11 +63,11 @@ final class Timeline {
     }
 
     var duration: Double { clips.reduce(0) { $0 + $1.seconds($1.length) } }
-    var frameCount: Int { clips.reduce(0) { $0 + $1.length } }
+    var sampleCount: Int { clips.reduce(0) { $0 + $1.length } }
 
     func seek(to t: Double) {
         playhead = max(0, min(t, duration))
-        player.seek(to: CMTime(seconds: playhead, preferredTimescale: 90_000), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: CMTime(seconds: playhead, preferredTimescale: 192_000), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     func togglePlay() {
@@ -77,74 +79,52 @@ final class Timeline {
 
     func add(_ urls: [URL]) async {
         for url in urls {
+            status = "Importing \(url.lastPathComponent)…"
             do {
-                let p = try await VeriCut.probe(url)
-                clips.append(Clip(url: url, probe: p, inFrame: 0, outFrame: p.frameCount, tint: added))
+                let im = try await Importer.prepare(url, project: format)
+                let p = im.probe
+                clips.append(Clip(file: im.file, probe: p, convertedFrom: im.convertedFrom,
+                                  inSample: 0, outSample: p.samples, tint: added))
                 added += 1
-                status = "Added \(url.lastPathComponent): \(p.frameCount) frames, \(p.keyframes.count) keyframes, \(String(format: "%.2f", p.fps)) fps"
+                let how = im.convertedFrom == nil ? "" : " (converted with ffmpeg)"
+                status = "Added \(url.lastPathComponent)\(how): \(p.samples) samples, \(p.audioFormat)"
             } catch {
                 status = "\(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
-        await refresh()
+        refresh()
     }
 
-    func remove(_ clip: Clip) async {
+    func remove(_ clip: Clip) {
         clips.removeAll { $0.id == clip.id }
-        await refresh()
-    }
-
-    func move(from: IndexSet, to: Int) async {
-        clips.move(fromOffsets: from, toOffset: to)
-        await refresh()
+        refresh()
     }
 
     /// Move clip `id` by `delta` places in the output order.
-    func shift(_ id: Clip.ID, by delta: Int) async {
+    func shift(_ id: Clip.ID, by delta: Int) {
         guard let i = clips.firstIndex(where: { $0.id == id }) else { return }
         let j = i + delta
         guard clips.indices.contains(j) else { return }
         clips.swapAt(i, j)
-        await refresh()
+        refresh()
     }
 
-    /// Re-plan and rebuild the preview after any edit.
-    func refresh() async {
-        rebuildPreview()
-        guard !clips.isEmpty else { planSummary = ""; return }
-        do {
-            let plans = try await VeriCut.plan(clips)
-            let segs = plans.flatMap(\.segments)
-            let copy = segs.filter { $0.kind == "copy" }.reduce(0) { $0 + $1.frames }
-            let enc = segs.filter { $0.kind == "encode" }.reduce(0) { $0 + $1.frames }
-            planSummary = "Export plan: copy \(copy) frames losslessly, re-encode \(enc)."
-        } catch {
-            planSummary = error.localizedDescription
-        }
-    }
-
-    /// Preview only (not verified): an AVMutableComposition of the clip ranges.
-    func rebuildPreview() {
+    /// Rebuild the preview after any edit. Preview only (not verified): an AVMutableComposition
+    /// of the clip ranges, timed in samples.
+    func refresh() {
         let comp = AVMutableComposition()
-        guard let track = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-              let audioTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { return }
         let clips = self.clips
         previewGeneration += 1
         let generation = previewGeneration
         Task { @MainActor in
             var cursor = CMTime.zero
             for c in clips {
-                let asset = AVURLAsset(url: c.url)
-                guard let src = try? await asset.loadTracks(withMediaType: .video).first else { continue }
-                let ts = CMTimeScale(c.probe.timescale)
-                let d = Int64(c.probe.frameDuration)
-                let range = CMTimeRange(start: CMTime(value: Int64(c.inFrame) * d, timescale: ts),
-                                        duration: CMTime(value: Int64(c.length) * d, timescale: ts))
-                try? track.insertTimeRange(range, of: src, at: cursor)
-                if let srcAudio = try? await asset.loadTracks(withMediaType: .audio).first {
-                    try? audioTrack.insertTimeRange(range, of: srcAudio, at: cursor)
-                }
+                let rate = CMTimeScale(c.probe.sampleRate)
+                let range = CMTimeRange(start: CMTime(value: Int64(c.inSample), timescale: rate),
+                                        duration: CMTime(value: Int64(c.length), timescale: rate))
+                // Whole-asset insert: on macOS 26 AVMutableCompositionTrack.insertTimeRange fails
+                // with -11800 (-12780) for every source we tried, WAV, FLAC and MP4 alike.
+                try? await comp.insertTimeRange(range, of: AVURLAsset(url: c.file), at: cursor)
                 cursor = cursor + range.duration
             }
             // Builds overlap while trimming; a slower, older one must not replace a newer preview.
@@ -162,12 +142,13 @@ final class Timeline {
         status = "Exporting…"
         let clock = ContinuousClock()
         let start = clock.now
+        let want = sampleCount
         do {
-            let r = try await VeriCut.export(clips, to: url)
-            status = "Exported \(r.frames) frames in \(r.ms) ms: copied \(r.copied) losslessly, re-encoded \(r.reencoded)."
+            let r = try await VeriCut.export(clips, to: url, level: level)
             let elapsed = (clock.now - start).formatted(.units(allowed: [.minutes, .seconds], width: .abbreviated, fractionalPart: .show(length: 1)))
-            let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64
-            let size = bytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "unknown size"
+            let size = ByteCountFormatter.string(fromByteCount: Int64(r.bytes), countStyle: .file)
+            let check = r.samples == want ? "" : " — expected \(want) samples!"
+            status = "Exported \(r.samples) samples (\(timecode(Double(r.samples) / Double(format?.sampleRate ?? 1)))) to \(url.lastPathComponent), \(size), level \(level), in \(r.ms) ms\(check)"
             // Not awaited: a pending permission prompt must not keep the export button disabled.
             Task { await Notifier.post(title: "Export finished", body: "\(url.lastPathComponent) · \(size) · \(elapsed)") }
         } catch {
