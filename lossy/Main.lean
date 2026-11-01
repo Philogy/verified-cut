@@ -15,7 +15,11 @@ def readWav (path : String) : IO Pcm := do
 def main : List String → IO UInt32
   | ["encode", q, i, o] => do
     let x ← readWav i
-    IO.FS.writeBinFile o (encode q.toNat! x)
+    let t0 ← IO.monoMsNow
+    let bytes ← IO.lazyPure fun _ => encode q.toNat! x
+    IO.FS.writeBinFile o bytes
+    let t1 ← IO.monoMsNow
+    IO.println s!"\{\"bytes\":{bytes.size},\"ms\":{t1 - t0}}"
     return 0
   | ["decode", i, o] => do
     match decode (← IO.FS.readBinFile i) with
@@ -25,11 +29,13 @@ def main : List String → IO UInt32
     let x ← readWav i
     let q := q.toNat!
     let t0 ← IO.monoMsNow
-    let bytes := encode q x
+    let bytes ← IO.lazyPure fun _ => encode q x
+    IO.eprint s!"{bytes.size} "
     let t1 ← IO.monoMsNow
-    let y := decode bytes
+    let y ← IO.lazyPure fun _ => decode bytes
+    IO.eprint s!"{y.isSome}\n"
     let t2 ← IO.monoMsNow
-    let expected := quantize q x
+    let expected := Flac.quantizeBlocks q x
     let ok := y == some expected
     let n := x.length * x.chans.length
     IO.println s!"\{\"q\":{q},\"bytes\":{bytes.size},\"samples\":{n},\"encodeMs\":{t1 - t0},\"decodeMs\":{t2 - t1},\"roundTrip\":{ok},\"maxErr\":{maxErr x expected},\"sqErr\":{sqErr x expected}}"

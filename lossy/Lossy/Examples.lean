@@ -25,6 +25,10 @@ example : ∃ y, decode (encode 6 tiny) = some y ∧ maxErr tiny y < 64 := error
 #guard maxErr tiny (quantize 4 tiny) == 15
 #guard decode (encode 4 tiny) == some (quantize 4 tiny)
 
+-- The byte-table CRC agrees with the bitwise one.
+#guard let l := (List.range 40).flatMap fun i => bitsOf 8 (i * 37 % 256)
+  crc16Bytes (packInto .empty l) == crc16 l
+
 /-- A decoder output with one sample off by 64 is not within `2^6` of the input. -/
 example : ¬ maxErr tiny ⟨44100, 16, [#[64, 1000, 2000, 3001, -3, -2000, 32767, -32768],
     #[5, 5, 5, 5, 7, 7, 7, 7]]⟩ < 2 ^ 6 := by decide

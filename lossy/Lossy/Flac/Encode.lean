@@ -69,18 +69,24 @@ def subframeBits (bps : Nat) (ws : Nat × Sub) : List Bool :=
 
 /-! Choosing a subframe. -/
 
-/-- Rice bits for `res` with parameter `k`. -/
-def riceCost (k : Nat) (res : List Int) : Nat :=
-  res.foldl (fun c r => c + zig r / 2 ^ k + 1 + k) 0
+/-- Rice bits with parameter `k` for residuals already folded by `zig`. -/
+def riceCost (k : Nat) (us : List Nat) : Nat :=
+  us.foldl (fun c u => c + (u >>> k) + 1 + k) 0
 
-/-- The cheapest Rice parameter below 15. -/
+/-- The smallest `k` below 15 with `n * 2^k` at least `sum`. -/
+def meanK (n sum : Nat) : Nat :=
+  ((List.range 15).find? fun k => sum ≤ n <<< k).getD 14
+
+/-- A Rice parameter below 15: the cheapest next to the mean's, like libFLAC. -/
 def bestK (res : List Int) : Nat :=
-  (List.range 15).foldl (fun k k' => if riceCost k' res < riceCost k res then k' else k) 0
+  let us := res.map zig
+  let k := meanK us.length (us.foldl (· + ·) 0)
+  [k - 1, min 14 (k + 1)].foldl (fun k k' => if riceCost k' us < riceCost k us then k' else k) k
 
 def Sub.cost (width : Nat) : Sub → Nat
   | .const _ => width
   | .verbatim vs => vs.length * width
-  | .fixed o _ k res => o * width + 10 + riceCost k res
+  | .fixed o _ k res => o * width + 10 + riceCost k (res.map zig)
 
 def fixedSub (o : Nat) (ys : List Int) : Sub :=
   let warm := ys.take o
@@ -135,9 +141,11 @@ def bodyBits (bps : Nat) (fr : Frame) : List Bool :=
 
 def padBits (l : List Bool) : List Bool := zeros ((8 - l.length % 8) % 8)
 
+/-- The CRC is computed from the packed bytes: bit by bit it was half the
+encoding time. The decoder does not check it. -/
 def frameBits (bps : Nat) (fr : Frame) : List Bool :=
   let b := bodyBits bps fr ++ padBits (bodyBits bps fr)
-  b ++ bitsOf 16 (crc16 b)
+  b ++ bitsOf 16 (crc16Bytes (packInto .empty b))
 
 /-- `fLaC` and a STREAMINFO block; MD5 left zero (unknown). -/
 def streamHeader (x : Pcm) : List Bool :=

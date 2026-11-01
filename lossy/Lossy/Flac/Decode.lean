@@ -88,6 +88,13 @@ def readHeader : Reader (Nat × Nat × Nat × Nat) := do
 def join (ch : Nat) (blocks : List (List (List Int))) : List (Array Int) :=
   blocks.foldl (fun acc b => List.zipWith (fun c s => c ++ s.toArray) acc b) (List.replicate ch #[])
 
+/-- `quantize`, a block at a time: `quantize` itself finds the block's peak
+again for every sample. Equal for valid input (`quantizeBlocks_eq`). -/
+def quantizeBlocks (q : Nat) (x : Pcm) : Pcm :=
+  ⟨x.rate, x.bits, join x.chans.length ((List.range (frameCount x.length)).map fun f =>
+    let s := shift q x f
+    (block x f).map (·.map (roundTo x.bits s)))⟩
+
 def readStream : Reader Pcm := do
   let (rate, ch, bps, n) ← readHeader
   let blocks ← many (readFrame bps ch) (frameCount n)

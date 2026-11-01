@@ -2,11 +2,14 @@ import Lossy.Proofs.Bits
 
 namespace Lossy
 
+theorem bitAt_eq_data (a : ByteArray) (i : Nat) : bitAt a i =
+    if h : i / 8 < a.data.size then a.data[i / 8].toNat.testBit (7 - i % 8) else false := rfl
+
 theorem bitAt_push_lt {out : ByteArray} {b : UInt8} {i : Nat} (h : i < 8 * out.size) :
     bitAt (out.push b) i = bitAt out i := by
   have hs : out.size = out.data.size := rfl
   have hi : i / 8 < out.data.size := by omega
-  simp only [bitAt, ByteArray.push, Array.size_push, dif_pos hi, dif_pos (show i / 8 < out.data.size + 1 by omega)]
+  simp only [bitAt_eq_data, ByteArray.push, Array.size_push, dif_pos hi, dif_pos (show i / 8 < out.data.size + 1 by omega)]
   rw [Array.getElem_push_lt]
 
 theorem byte_testBit' : ∀ (r : Fin 8) (b0 b1 b2 b3 b4 b5 b6 b7 : Bool),
@@ -31,7 +34,7 @@ theorem bitAt_push_last {out : ByteArray} {b : UInt8} {r : Nat} (hr : r < 8) :
   have hs : out.size = out.data.size := rfl
   have hq : (8 * out.size + r) / 8 = out.data.size := by omega
   have hm : (8 * out.size + r) % 8 = r := by omega
-  simp only [bitAt, ByteArray.push, Array.size_push, hq, hm, dif_pos (Nat.lt_succ_self _)]
+  simp only [bitAt_eq_data, ByteArray.push, Array.size_push, hq, hm, dif_pos (Nat.lt_succ_self _)]
   rw [Array.getElem_push_eq]
 
 theorem size_packInto (out : ByteArray) (l : List Bool) (h : l.length % 8 = 0) :

@@ -26,10 +26,18 @@ theorem foldl_pick {P : α → Prop} {better : α → α → Prop} [∀ a b, Dec
     simp only [List.foldl_cons]
     exact ih (by split <;> simp_all) (fun b hb => h b (by simp [hb]))
 
+theorem meanK_lt (n sum : Nat) : meanK n sum < 15 := by
+  unfold meanK
+  cases h : (List.range 15).find? fun k => sum ≤ n <<< k with
+  | none => decide
+  | some k => exact List.mem_range.mp (List.mem_of_find?_eq_some h)
+
 theorem bestK_lt (res : List Int) : bestK res < 15 := by
   unfold bestK
-  exact foldl_pick (P := (· < 15)) (better := fun k k' => riceCost k' res < riceCost k res)
-    (init := 0) (by decide) (fun k hk => List.mem_range.mp hk)
+  have := meanK_lt (res.map zig).length ((res.map zig).foldl (· + ·) 0)
+  refine foldl_pick (P := (· < 15)) this fun k hk => ?_
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hk
+  omega
 
 theorem tz_le : ∀ (cap n : Nat), wasted.tz cap n ≤ cap
   | 0, _ => Nat.le_refl 0

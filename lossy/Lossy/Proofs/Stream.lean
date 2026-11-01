@@ -171,4 +171,7 @@ theorem join_encode {q : Nat} {x : Pcm} (hx : x.Valid) :
     apply ih
     simp [h, Array.toList_extract, List.extract_eq_take_drop]
 
+theorem quantizeBlocks_eq {q : Nat} {x : Pcm} (hx : x.Valid) : quantizeBlocks q x = quantize q x := by
+  simp only [quantizeBlocks]; rw [join_encode hx]; rfl
+
 end Lossy.Flac
