@@ -16,13 +16,11 @@ namespace VeriCut
 class MonadEncode (α : outParam Type) (m : Type → Type) where
   encode : Job → m (Stream α)
 
-variable {α : Type} [Inhabited α] {m : Type → Type} [Monad m] [MonadEncode α m]
+variable {α : Type} {m : Type → Type} [Monad m] [MonadEncode α m]
 
 /-- `extract`, indexing the stream as an array (a list index is O(n)). -/
 def extractA (a : Array (Packet α)) (ks : List Nat) : Stream α :=
-  ks.map fun k =>
-    let p := a.getD k default
-    { p with refs := p.refs.map (ks.idxOf ·) }
+  ks.filterMap fun k => a[k]?.map fun p => { p with refs := p.refs.map (ks.idxOf ·) }
 
 /-- The packets one segment of clip number `clip` (source `s`) contributes. -/
 def renderSegment (clip : Nat) (s : Stream α) : Segment → m (Stream α)

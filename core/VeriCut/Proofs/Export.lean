@@ -21,13 +21,13 @@ theorem AllRel.eq_of {β} {a b : List β} (h : AllRel (· = ·) a b) : a = b := 
   | cons hr _ ih => subst hr; rw [ih]
 
 /-- Copying a valid copy set yields a well-formed stream. -/
-theorem extract_wellFormed [Inhabited α] (s : Stream α) (ks : List Nat)
+theorem extract_wellFormed (s : Stream α) (ks : List Nat)
     (hwf : s.WellFormed) (hks : CopySet s ks) : (extract s ks).WellFormed := by
   intro j hj r hr
-  have hj' : j < ks.length := by simpa [length_extract] using hj
+  have hj' : j < ks.length := by simpa [length_extract s ks hks.bound] using hj
   have hk : ks[j] < s.length := hks.bound _ (List.getElem_mem hj')
-  have hget : (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } := by
-    simp [extract, List.getD_eq_getElem?_getD, hk]
+  have hget : (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } :=
+    getElem_extract s ks hks.bound j hj hj' hk
   rw [hget] at hr
   simp only [List.mem_map] at hr
   obtain ⟨r0, hr0, rfl⟩ := hr
@@ -41,7 +41,7 @@ theorem extract_wellFormed [Inhabited α] (s : Stream α) (ks : List Nat)
   · exfalso; subst h; omega
   · exfalso; have := hp j _ hj' hm h; omega
 
-theorem render_wellFormed [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx)
+theorem render_wellFormed (s : Stream α) (enc : Encoder α Pic c approx)
     (hwf : s.WellFormed) (seg : Segment) (hseg : ∀ ks, seg = .copy ks → CopySet s ks) :
     (seg.render s enc).WellFormed := by
   cases seg with
@@ -50,7 +50,7 @@ theorem render_wellFormed [Inhabited α] (s : Stream α) (enc : Encoder α Pic c
 
 /-- Each segment decodes to its target pictures: exactly for copies,
 `approx`-closely for re-encodes. -/
-theorem render_correct [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx)
+theorem render_correct (s : Stream α) (enc : Encoder α Pic c approx)
     (hwf : s.WellFormed) (hR : ∀ p, approx p p) (seg : Segment)
     (hseg : ∀ ks, seg = .copy ks → CopySet s ks) :
     AllRel approx (decode c (seg.render s enc)) (seg.frames.map (picture c s)) := by
@@ -64,7 +64,7 @@ theorem render_correct [Inhabited α] (s : Stream α) (enc : Encoder α Pic c ap
 /-- **Smart-cut correctness.** For any codec and any encoder meeting its
 contract, a valid plan's export decodes to the requested source pictures,
 up to `approx` on re-encoded frames. -/
-theorem export_correct [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx)
+theorem export_correct (s : Stream α) (enc : Encoder α Pic c approx)
     (plan : List Segment) (hwf : s.WellFormed) (hplan : PlanValid s plan)
     (hR : ∀ p, approx p p) :
     AllRel approx (decode c (exportPlan s enc plan)) (target c s plan) := by
@@ -84,7 +84,7 @@ theorem export_correct [Inhabited α] (s : Stream α) (enc : Encoder α Pic c ap
 
 /-- **Lossless when nothing is re-encoded.** A copy-only valid plan decodes to
 exactly the requested pictures. -/
-theorem export_exact [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx)
+theorem export_exact (s : Stream α) (enc : Encoder α Pic c approx)
     (plan : List Segment) (hwf : s.WellFormed) (hplan : PlanValid s plan)
     (hcopy : ∀ seg ∈ plan, seg.isCopy = true) :
     decode c (exportPlan s enc plan) = target c s plan := by

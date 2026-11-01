@@ -16,12 +16,41 @@ theorem getElem_decode (c : Codec α Pic) (s : Stream α) (i : Nat) (h : i < (de
     (decode c s)[i] = picture c s i := by
   simp [decode]
 
-theorem length_extract [Inhabited α] (s : Stream α) (ks : List Nat) :
-    (extract s ks).length = ks.length := by simp [extract]
+theorem extract_eq_pmap (s : Stream α) (ks : List Nat) (hb : ∀ k ∈ ks, k < s.length) :
+    extract s ks = ks.pmap (fun k _ => { s[k] with refs := s[k].refs.map (ks.idxOf ·) }) hb := by
+  unfold extract
+  generalize hf : (fun p : Packet α => { p with refs := p.refs.map (ks.idxOf ·) }) = f
+  have : ∀ (l : List Nat) (hl : ∀ k ∈ l, k < s.length),
+      l.filterMap (fun k => s[k]?.map f) = l.pmap (fun k _ => f s[k]) hl := by
+    intro l; induction l with
+    | nil => intro _; rfl
+    | cons x xs ih =>
+      intro hl
+      have hx := hl x (by simp)
+      simp [List.getElem?_eq_getElem hx, ih fun k hk => hl k (by simp [hk])]
+  rw [this ks hb]; subst hf; rfl
+
+/-- Out-of-range indices are skipped. -/
+theorem length_extract_eq_filter (s : Stream α) (ks : List Nat) :
+    (extract s ks).length = (ks.filter (· < s.length)).length := by
+  unfold extract
+  generalize (fun p : Packet α => { p with refs := p.refs.map (ks.idxOf ·) }) = f
+  induction ks with
+  | nil => rfl
+  | cons x xs ih =>
+    by_cases hx : x < s.length <;> simp [hx, ih]
+
+theorem length_extract (s : Stream α) (ks : List Nat) (hb : ∀ k ∈ ks, k < s.length) :
+    (extract s ks).length = ks.length := by simp [extract_eq_pmap s ks hb]
+
+theorem getElem_extract (s : Stream α) (ks : List Nat) (hb : ∀ k ∈ ks, k < s.length)
+    (j : Nat) (hj : j < (extract s ks).length) (hjk : j < ks.length) (hk : ks[j] < s.length) :
+    (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } := by
+  simp [extract_eq_pmap s ks hb]
 
 /-- **Copy soundness.** Copying a dependency-closed set of packets byte-for-byte
 yields exactly the same pictures, for every codec. -/
-theorem picture_extract [Inhabited α] (c : Codec α Pic) (s : Stream α) (ks : List Nat)
+theorem picture_extract (c : Codec α Pic) (s : Stream α) (ks : List Nat)
     (hwf : s.WellFormed) (hks : CopySet s ks) :
     ∀ j (hj : j < ks.length), picture c (extract s ks) j = picture c s ks[j] := by
   intro j
@@ -29,10 +58,10 @@ theorem picture_extract [Inhabited α] (c : Codec α Pic) (s : Stream α) (ks : 
   | _ j ih =>
   intro hj
   have hk : ks[j] < s.length := hks.bound _ (List.getElem_mem hj)
-  have hjt : j < (extract s ks).length := by simp [length_extract, hj]
+  have hjt : j < (extract s ks).length := by simp [length_extract s ks hks.bound, hj]
   rw [picture_eq c _ j hjt, picture_eq c s _ hk]
-  have hget : (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } := by
-    simp [extract, List.getD_eq_getElem?_getD, hk]
+  have hget : (extract s ks)[j] = { s[ks[j]] with refs := s[ks[j]].refs.map (ks.idxOf ·) } :=
+    getElem_extract s ks hks.bound j hjt hj hk
   simp only [hget, List.map_map]
   congr 1
   apply List.map_congr_left
@@ -51,14 +80,15 @@ theorem picture_extract [Inhabited α] (c : Codec α Pic) (s : Stream α) (ks : 
   rw [ih _ hmj hm, hkm]
 
 /-- Copy soundness, whole-stream form. -/
-theorem decode_extract [Inhabited α] (c : Codec α Pic) (s : Stream α) (ks : List Nat)
+theorem decode_extract (c : Codec α Pic) (s : Stream α) (ks : List Nat)
     (hwf : s.WellFormed) (hks : CopySet s ks) :
     decode c (extract s ks) = ks.map (picture c s) := by
   apply List.ext_getElem
-  · simp [length_decode, length_extract]
+  · simp [length_decode, length_extract s ks hks.bound]
   · intro j h1 h2
     rw [getElem_decode, List.getElem_map]
-    exact picture_extract c s ks hwf hks j (by simpa [length_decode, length_extract] using h1)
+    exact picture_extract c s ks hwf hks j
+      (by simpa [length_decode, length_extract s ks hks.bound] using h1)
 
 /-! ## Concatenation -/
 

@@ -3,14 +3,11 @@ import VeriCut.Proofs.Planner
 
 namespace VeriCut
 
-variable {α : Type} [Inhabited α]
-
-theorem getD_toArray (s : Stream α) (i : Nat) : s.toArray.getD i default = s.getD i default := by
-  simp [Array.getD_eq_getD_getElem?, List.getD_eq_getElem?_getD]
+variable {α : Type}
 
 theorem wantedA_toArray (s : Stream α) (r : DisplayRange) (i : Nat) :
     wantedA s.toArray r i = wanted s r i := by
-  simp only [wantedA, wanted, getD_toArray, List.size_toArray]
+  simp only [wantedA, wanted, List.size_toArray, List.getElem_toArray]
 
 theorem copyTable_size (a : Array (Packet α)) (r : DisplayRange) (k : Nat) :
     (copyTable a r k).size = k := by
@@ -36,13 +33,16 @@ theorem copyTable_getD (s : Stream α) (r : DisplayRange) :
       subst hik
       rw [Array.getD_eq_getD_getElem?, Array.getElem?_push]
       simp only [hsz, if_true, Option.getD_some]
-      rw [copyEntry, copyable_eq, wantedA_toArray, getD_toArray]
-      congr 1
-      apply Bool.eq_iff_iff.mpr
-      simp only [List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq]
-      constructor
-      · intro hh x hx; have := hh x hx; exact ⟨this.1, by rw [← ih x this.1]; exact this.2⟩
-      · intro hh x hx; have := hh x hx; exact ⟨this.1, by rw [ih x this.1]; exact this.2⟩
+      rw [copyEntry, copyable_eq]
+      simp only [List.size_toArray, List.getElem_toArray, wantedA_toArray]
+      split
+      · congr 1
+        apply Bool.eq_iff_iff.mpr
+        simp only [List.all_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+        constructor
+        · intro hh x hx; have := hh x hx; exact ⟨this.1, by rw [← ih x this.1]; exact this.2⟩
+        · intro hh x hx; have := hh x hx; exact ⟨this.1, by rw [ih x this.1]; exact this.2⟩
+      · rfl
 
 /-- The table agrees with the reference definition. -/
 theorem table_eq_copyable (s : Stream α) (r : DisplayRange) (i : Nat) (hi : i < s.length) :
@@ -113,8 +113,11 @@ theorem checkClosed_sound (s : Stream α) (mem : Array Bool) (ks : List Nat)
     (hmem : ∀ x, mem.getD x false = true ↔ x ∈ ks) (h : checkClosed s.toArray mem ks = true) :
     DepClosed s ks := by
   intro k hk hlen x hx
-  simp only [checkClosed, List.all_eq_true, getD_toArray] at h
-  exact (hmem x).mp (h k hk x (by simpa [List.getD_eq_getElem?_getD, hlen] using hx))
+  have := h
+  simp only [checkClosed, List.all_eq_true, List.size_toArray, List.getElem_toArray] at this
+  have hk' := this k hk
+  simp only [hlen, dite_true, List.all_eq_true] at hk'
+  exact (hmem x).mp (hk' x hx)
 
 /-- The frames `mkSegment` copies for a run: those of `run` below `n`. -/
 theorem mem_filter_memTable (n : Nat) (run : List Nat) (i : Nat) :
@@ -158,9 +161,11 @@ theorem plan_covers (s : Stream α) (r : DisplayRange) (i : Nat) :
     i ∈ ((plan s r).map Segment.frames).flatten ↔ wanted s r i = true := by
   have hdo : ∀ x, x ∈ displayOrder s.toArray r ↔ wanted s r x = true := by
     intro x
-    simp only [displayOrder, List.mem_mergeSort, List.mem_filter, List.mem_range,
-      wantedA_toArray, List.size_toArray]
-    exact ⟨fun h => h.2, fun h => ⟨wanted_lt s r x h, h⟩⟩
+    simp only [displayOrder, List.mem_map, List.mem_mergeSort, List.mem_filter,
+      List.mem_finRange, true_and, wantedA_toArray]
+    constructor
+    · rintro ⟨j, hj, rfl⟩; exact hj
+    · intro h; exact ⟨⟨x, by simpa using wanted_lt s r x h⟩, h, rfl⟩
   rw [← hdo, ← runs_flatten (fun i => (copyTable s.toArray r s.toArray.size).getD i false) (displayOrder s.toArray r)]
   simp only [plan, List.map_map, List.mem_flatten, List.mem_map, Function.comp]
   constructor

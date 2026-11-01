@@ -44,13 +44,13 @@ structure Encoder (α Pic : Type) (c : Codec α Pic) (approx : Pic → Pic → P
 variable {α Pic : Type} {c : Codec α Pic} {approx : Pic → Pic → Prop}
 
 /-- The compressed packets one segment contributes, before concatenation. -/
-def Segment.render [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx) :
+def Segment.render (s : Stream α) (enc : Encoder α Pic c approx) :
     Segment → Stream α
   | .copy ks => extract s ks
   | .encode ks => enc.encode (ks.map (picture c s))
 
 /-- The exported stream. -/
-def exportPlan [Inhabited α] (s : Stream α) (enc : Encoder α Pic c approx)
+def exportPlan (s : Stream α) (enc : Encoder α Pic c approx)
     (plan : List Segment) : Stream α :=
   concatStreams (plan.map (Segment.render s enc))
 

@@ -21,15 +21,16 @@ structure DisplayRange where
 variable {α : Type}
 
 /-- Does the user want decode-order frame `i`? -/
-def wanted [Inhabited α] (s : Stream α) (r : DisplayRange) (i : Nat) : Bool :=
-  i < s.length && r.lo ≤ (s.getD i default).pts && (s.getD i default).pts < r.hi
+def wanted (s : Stream α) (r : DisplayRange) (i : Nat) : Bool :=
+  if h : i < s.length then r.lo ≤ s[i].pts && s[i].pts < r.hi else false
 
 /-- Reference definition: frame `i` can be copied iff it is wanted and all of
 its references can be copied. (Clear but slow; `Impl.Planner` is the fast
 version, proven equal.) -/
-def copyable [Inhabited α] (s : Stream α) (r : DisplayRange) (i : Nat) : Bool :=
-  wanted s r i &&
-    (s.getD i default).refs.attach.all fun ⟨x, _⟩ => if x < i then copyable s r x else false
+def copyable (s : Stream α) (r : DisplayRange) (i : Nat) : Bool :=
+  if h : i < s.length then
+    wanted s r i && s[i].refs.attach.all fun ⟨x, _⟩ => if x < i then copyable s r x else false
+  else false
 termination_by i
 
 end VeriCut

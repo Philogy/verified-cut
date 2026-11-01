@@ -14,7 +14,7 @@ per-job encoder contract.
 
 namespace VeriCut
 
-variable {α Pic : Type} [Inhabited α] {c : Codec α Pic} {approx : Pic → Pic → Prop}
+variable {α Pic : Type} {c : Codec α Pic} {approx : Pic → Pic → Prop}
 
 /-- What one segment renders to when the encoder is the function `f`. -/
 def Segment.renderWith (clip : Nat) (s : Stream α) (f : Job → Stream α) : Segment → Stream α
@@ -27,10 +27,8 @@ def renderFrom (f : Job → Stream α) : Nat → List (Stream α × List Segment
   | i, (s, segs) :: rest => segs.map (Segment.renderWith i s f) :: renderFrom f (i + 1) rest
 
 theorem extractA_toArray (s : Stream α) (ks : List Nat) : extractA s.toArray ks = extract s ks := by
-  simp only [extractA, extract, Array.getD_eq_getD_getElem?, List.getElem?_toArray,
-    List.getD_eq_getElem?_getD]
+  simp only [extractA, extract, List.getElem?_toArray]
 
-omit [Inhabited α] in
 theorem mapM_run {β γ : Type} (g : β → PureEncode α γ) (f : Job → Stream α) (xs : List β) :
     (xs.mapM g).run f = xs.map fun x => (g x).run f := by
   induction xs with

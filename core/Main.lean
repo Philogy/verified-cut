@@ -57,7 +57,7 @@ def probe (path : String) : IO Unit := do
 
 /-- Check a clip's range and compute the plan of its stream `s` (`toStream t`,
 up to packet data). -/
-def planClip {α} [Inhabited α] (c : Clip) (t : VideoTrack) (s : VeriCut.Stream α) :
+def planClip {α} (c : Clip) (t : VideoTrack) (s : VeriCut.Stream α) :
     IO (List Segment) := do
   let n := t.samples.size
   unless c.inF < c.outF && c.outF ≤ n do

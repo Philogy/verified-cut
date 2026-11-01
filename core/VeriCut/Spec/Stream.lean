@@ -67,11 +67,9 @@ structure CopySet {α} (s : Stream α) (ks : List Nat) : Prop where
 
 /-- Copy the selected packets byte-for-byte, rewriting only the reference
 indices so they point at the same packets' new positions. This is exactly what
-a stream-copy muxer does. -/
-def extract {α} [Inhabited α] (s : Stream α) (ks : List Nat) : Stream α :=
-  ks.map fun k =>
-    let p := s.getD k default
-    { p with refs := p.refs.map (ks.idxOf ·) }
+a stream-copy muxer does. Indices past the end are skipped (a `CopySet` has none). -/
+def extract {α} (s : Stream α) (ks : List Nat) : Stream α :=
+  ks.filterMap fun k => s[k]?.map fun p => { p with refs := p.refs.map (ks.idxOf ·) }
 
 /-- Move a stream so it can be appended after `n` packets. -/
 def shift {α} (n : Nat) (s : Stream α) : Stream α :=

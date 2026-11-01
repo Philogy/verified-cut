@@ -10,15 +10,17 @@ and indexing it is O(n). Proven against the spec in `Proofs/Impl.lean`.
 
 namespace VeriCut
 
-variable {α : Type} [Inhabited α]
+variable {α : Type}
 
 /-- `wanted` on the stream as an array. -/
 def wantedA (a : Array (Packet α)) (r : DisplayRange) (i : Nat) : Bool :=
-  i < a.size && r.lo ≤ (a.getD i default).pts && (a.getD i default).pts < r.hi
+  if h : i < a.size then r.lo ≤ a[i].pts && a[i].pts < r.hi else false
 
 /-- One table entry, using the already-computed entries for earlier frames. -/
 def copyEntry (a : Array (Packet α)) (r : DisplayRange) (t : Array Bool) (i : Nat) : Bool :=
-  wantedA a r i && (a.getD i default).refs.all fun x => decide (x < i) && t.getD x false
+  if h : i < a.size then
+    wantedA a r i && a[i].refs.all fun x => decide (x < i) && t.getD x false
+  else false
 
 /-- `copyTable s.toArray r k` holds `copyable s r i` for every `i < k`. -/
 def copyTable (a : Array (Packet α)) (r : DisplayRange) : Nat → Array Bool
@@ -37,12 +39,12 @@ def runs (f : Nat → Bool) : List Nat → List (Bool × List Nat)
 /-- Runtime check that a packet set is dependency-closed, given its members
 as a table (`mem.getD k false` iff `k ∈ ks`). -/
 def checkClosed (a : Array (Packet α)) (mem : Array Bool) (ks : List Nat) : Bool :=
-  ks.all fun k => (a.getD k default).refs.all fun x => mem.getD x false
+  ks.all fun k => if h : k < a.size then a[k].refs.all fun x => mem.getD x false else true
 
 /-- Wanted frames in display order. -/
 def displayOrder (a : Array (Packet α)) (r : DisplayRange) : List Nat :=
-  ((List.range a.size).filter (wantedA a r)).mergeSort
-    fun i j => (a.getD i default).pts ≤ (a.getD j default).pts
+  let ws := (List.finRange a.size).filter fun (i : Fin a.size) => wantedA a r i
+  (ws.mergeSort fun i j => a[i].pts ≤ a[j].pts).map Fin.val
 
 /-- Membership table of `run` for indices below `n`. -/
 def memTable (n : Nat) (run : List Nat) : Array Bool :=
