@@ -1,6 +1,12 @@
 # vericut FLAC vs libFLAC 1.5.0 / ffmpeg
 
-## Starting point (`bce05d8`, M-series Mac, single run, wall clock)
+Current state (`95565b4`, the CLI's fast path): within 0.3 % of libFLAC's size at levels 0, 5
+and 8, 10-17x slower to encode, about 8x slower to decode, 3.5 GB peak RSS on a 61-minute
+podcast. Table at the end of step 9. Plot: `bench/flac-optimization.png`
+(`uv run bench/plot_flac_optimization.py`). Steps 2-8 below were first made in the spec codec
+and moved to `Flac/Fast/` in step 9; the spec is unchanged since `8a7a9cd`.
+
+## Starting point (`bce05d8`, Apple M5 Pro, single run, wall clock)
 
 Build `bce05d8` (fixed predictors only, no LPC, no SIMD, single thread, unoptimized Lean).
 
@@ -17,9 +23,9 @@ Build `bce05d8` (fixed predictors only, no LPC, no SIMD, single thread, unoptimi
 | podcast 61.2 min | vericut -5 | 324 (5.37 GB RSS) | 151,418,805 | 23.4 % |
 
 At level 0 (same toolset as `flac -0`: fixed predictors) we match libFLAC's size, and are ~80× slower.
-At -5/-8 libFLAC wins by 7–30 % in size through LPC; we don't emit LPC yet.
+At -5/-8 libFLAC won by 7–30 % in size through LPC, which we didn't emit then (added in step 6).
 Decode of piano (flac -5 input): 1.9 s vs flac ~0.05 s. Podcast output: `flac -d` md5 = source md5.
-Throughput ~8–11× realtime, linear in length; memory ~88 B per sample (boxed `Array Int`).
+Throughput was ~8–11× realtime, linear in length; memory ~88 B per sample (boxed `Array Int`).
 
 
 ## Optimization log
