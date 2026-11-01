@@ -1,13 +1,24 @@
 core/.lake/
 app/.build/
 app/.swiftpm/
-*.tmp.mp4
 __pycache__/
 .DS_Store
-samples/stock/
-samples/fetch_stock.sh
-samples/gop24_open.mp4
-samples/av_chirp.mp4
-samples/synth/
-samples/audio/
 out/
+samples/
+
+# scratch, kept locally only
+_to_delete/
+lossy/
+
+# video-era benchmark (untracked; MP4 cutter is gone)
+bench/bin/
+bench/cmp/
+bench/results/
+bench/inputs-noaudio/
+bench/.gitignore
+bench/README.md
+bench/RESULTS.md
+bench/bench.sh
+bench/compare.sh
+bench/psnr.sh
+bench/stages.sh
