@@ -67,7 +67,8 @@ omit valid in
 theorem encode_body (info : StreamInfo) :
     (writeHead info .empty).bytes ++ (encodeFrames st x).1 = writeStream info ((planFrames st x).map Flac.writeFrame) := by
   unfold encodeFrames writeStream
-  rw [foldl_append_fst (encodeFrame st x), foldl_append_assoc, ByteArray.append_empty]
+  rw [foldl_append_fst (encodeFrame st x), foldl_append_assoc]
+  rw [show ∀ c, ByteArray.emptyWithCapacity c = .empty from fun _ => rfl, ByteArray.append_empty]
   simp only [encodeFrame, writeFrame_eq]
   simp only [planFrames, Array.map_map, ← Array.foldl_toList, Array.toList_map, Array.toList_range, List.foldl_map]
   rfl

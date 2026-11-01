@@ -216,7 +216,10 @@ def encodeFrame (st : Settings) (x : Pcm) (k : Nat) : ByteArray :=
 planned and written before the next, so only one is held at a time. -/
 def encodeFrames (st : Settings) (x : Pcm) : ByteArray × Nat × Nat :=
   let b := st.clampedBlockSize
-  (List.range ((x.length + b - 1) / b)).foldl (init := (.empty, 0, 0)) fun (out, lo, hi) k =>
+  -- Reserved up front: appending to a full `ByteArray` copies it, which costs time and peak
+  -- memory. The input's size in bytes bounds the output of any sensible encoding.
+  let cap := x.samples.size * ((x.format.bitsPerSample + 7) / 8) + 4096
+  (List.range ((x.length + b - 1) / b)).foldl (init := (.emptyWithCapacity cap, 0, 0)) fun (out, lo, hi) k =>
     let f := encodeFrame st x k
     (out ++ f, if k = 0 then f.size else min lo f.size, max hi f.size)
 
