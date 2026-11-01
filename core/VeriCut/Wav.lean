@@ -105,10 +105,16 @@ def write (x : Pcm) : ByteArray := Id.run do
     d := [0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71].foldl (fun d b => d.push b) d
   d := "data".toUTF8.foldl (·.push ·) d
   d := pushLE d 4 dataSize
-  let m : Int := 2 ^ (8 * bytes)
+  let m : Int := 2 ^ shift
   for v in x.samples do
-    let v := v <<< shift
-    d := pushLE d bytes (if bytes = 1 then (v + 128).toNat else (v % m).toNat)
+    let v := if shift = 0 then v else v * m
+    -- two's complement through `Int64`; only the low `bytes` bytes are kept
+    let u := (if bytes = 1 then v + 128 else v).toInt64.toUInt64
+    d := match bytes with
+      | 1 => d.push u.toUInt8
+      | 2 => (d.push u.toUInt8).push (u >>> 8).toUInt8
+      | 3 => ((d.push u.toUInt8).push (u >>> 8).toUInt8).push (u >>> 16).toUInt8
+      | _ => (((d.push u.toUInt8).push (u >>> 8).toUInt8).push (u >>> 16).toUInt8).push (u >>> 24).toUInt8
   return d
 
 end VeriCut.Wav

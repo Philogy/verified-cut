@@ -25,6 +25,17 @@ def Encodes (f : Writer → Writer) (l : List Bool) : Prop := ∀ w, (f w).bits 
 def Decodes {α : Type} (p : Parser α) (l : List Bool) (a : α) : Prop :=
   ∀ d pos t, (bitsOf d).drop pos = l ++ t → p d pos = .ok (a, pos + l.length)
 
+@[simp] theorem pow2_eq (k : Nat) : pow2 k = 2 ^ k := by
+  unfold pow2
+  split
+  · rename_i hk
+    have hk' : (k.toUInt64).toNat = k := by
+      rw [Nat.toUInt64, UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+    have hp : (2 : Nat) ^ k < 2 ^ 64 := Nat.pow_lt_pow_right (by decide) (by omega)
+    rw [UInt64.toNat_shiftLeft, hk', Nat.mod_eq_of_lt (by omega : k < 64)]
+    simp [Nat.one_shiftLeft, Nat.mod_eq_of_lt hp]
+  · rfl
+
 /-! ## `natBits` -/
 
 @[simp] theorem natBits_zero (v : Nat) : natBits 0 v = [] := rfl
@@ -401,7 +412,8 @@ theorem signed_value (k : Nat) (v : Int) (h : -2 ^ (k - 1) ≤ v ∧ v < 2 ^ (k 
 theorem readSigned (k : Nat) (v : Int) (h : -2 ^ (k - 1) ≤ v ∧ v < 2 ^ (k - 1)) (hk : 0 < k) :
     RoundTrip (·.writeSigned k v) (Parser.readSigned k) v :=
   have ⟨hlt, e⟩ := signed_value k v h hk
-  congr (bind (readBits k _ hlt) (pure _)) (fun _ => rfl) rfl e
+  congr (bind (readBits k _ hlt) (pure _)) (fun _ => by simp [Writer.writeSigned]) rfl
+    (by simp only [pow2_eq]; push_cast at e ⊢; exact e)
 
 /-- Writing each element of `xs` in turn, then reading as many. -/
 theorem many {step : Writer → β → Writer} {p : Parser β} {xs : List β}

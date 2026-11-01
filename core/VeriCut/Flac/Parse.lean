@@ -13,7 +13,7 @@ open Parser
 def riceP (k : Nat) : Parser Int := do
   let q ← unary
   let r ← readBits k
-  pure (unzigzag (q * 2 ^ k + r))
+  pure (unzigzag (q * pow2 k + r))
 
 def partitionP (paramBits count : Nat) : Parser Partition := do
   let k ← readBits paramBits

@@ -4,6 +4,9 @@ Bit writer and bit reader, most significant bit first (FLAC's order).
 
 namespace VeriCut
 
+/-- `2 ^ k`; for `k < 63` in `UInt64`, since `Nat` powers and shifts go through GMP. -/
+@[inline] def pow2 (k : Nat) : Nat := if k < 63 then ((1 : UInt64) <<< k.toUInt64).toNat else 2 ^ k
+
 /-- The bytes written so far, then the low `n` bits of `acc`, which don't fill a byte. -/
 structure Writer where
   bytes : ByteArray
@@ -44,7 +47,7 @@ decreasing_by omega
 
 /-- Two's complement in `k` bits. -/
 def writeSigned (w : Writer) (k : Nat) (v : Int) : Writer :=
-  w.write k (v % 2 ^ k).toNat
+  w.write k (v % (pow2 k : Int)).toNat
 
 /-- Pad with zeros to a byte boundary. -/
 def align (w : Writer) : Writer :=
@@ -94,7 +97,8 @@ def readBits (k : Nat) : Parser Nat := fun d p => readBitsAux d k 0 p
 /-- `k` bits as a two's complement number. -/
 def readSigned (k : Nat) : Parser Int := do
   let u ← readBits k
-  pure (if 2 * u < 2 ^ k then (u : Int) else (u : Int) - 2 ^ k)
+  let m := pow2 k
+  pure (if 2 * u < m then (u : Int) else (u : Int) - m)
 
 def unaryAux (d : ByteArray) (p q : Nat) : Except String (Nat × Nat) :=
   if h : p / 8 < d.size then

@@ -133,7 +133,7 @@ def Body.samples (n : Nat) : Body → Array Int
   | .lpc _ shift coefs warmup r => restore coefs shift warmup r.values
 
 def Subframe.samples (n : Nat) (sf : Subframe) : Array Int :=
-  if sf.wasted = 0 then sf.body.samples n else (sf.body.samples n).map (· * 2 ^ sf.wasted)
+  if sf.wasted = 0 then sf.body.samples n else let m : Int := 2 ^ sf.wasted; (sf.body.samples n).map (· * m)
 
 /-- Coded channels to left/right (or the independent channels). -/
 def Channels.undo : Channels → Array (Array Int) → Array (Array Int)

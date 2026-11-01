@@ -78,7 +78,7 @@ theorem roundTrip_rice (k : Nat) (v : Int) : RoundTrip (writeRice k · v) (riceP
   rt roundTrip_unary (zigzag v >>> k)
   rt RoundTrip.readBits k (zigzag v % 2 ^ k) (Nat.mod_lt _ (Nat.two_pow_pos k))
   · refine RoundTrip.pure' ?_
-    rw [Nat.shiftRight_eq_div_pow, Nat.mul_comm, Nat.div_add_mod, unzigzag_zigzag]
+    rw [pow2_eq, Nat.shiftRight_eq_div_pow, Nat.mul_comm, Nat.div_add_mod, unzigzag_zigzag]
   · intro w; rfl
   · intro w; rfl
 
