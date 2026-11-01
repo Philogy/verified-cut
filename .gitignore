@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 samples/stock/
 samples/fetch_stock.sh
+samples/gop24_open.mp4
