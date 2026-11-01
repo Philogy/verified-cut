@@ -258,6 +258,25 @@ class RealClips(unittest.TestCase):
                 vericut("decode", ref, back)
                 self.assertEqual(wav_data(back), wav_data(wav))
 
+    def test_podcast_then_boom(self):
+        # The user's report: a podcast cut followed by the vine boom, where the boom seemed missing.
+        # Same In point as their export, 10 s instead of 96 s.
+        if not AUDIO or not os.path.exists(os.path.join(AUDIO, "dwarkesh_robert_caro.wav")):
+            self.skipTest("podcast not in samples/audio")
+        pod, boom = os.path.join(AUDIO, "dwarkesh_robert_caro.wav"), os.path.join(AUDIO, "meme_vine_boom.wav")
+        start, n = 22994626, 441000
+        with open(pod, "rb") as f:
+            head = f.read(4096)
+            f.seek(head.index(b"data") + 8 + 4 * start)
+            want = f.read(4 * n)
+        nb = vericut("probe", boom)["samples"]
+        want += wav_data(boom)
+        t, out = tmp("podcast_boom.json"), tmp("podcast_boom.flac")
+        with open(t, "w") as f:
+            json.dump({"clips": [{"src": pod, "in": start, "out": start + n}, {"src": boom, "in": 0, "out": nb}]}, f)
+        self.assertEqual(vericut("export", t, out)["samples"], n + nb)
+        self.assertEqual(flac_decode_raw(out, 16), want)
+
 
 class Export(unittest.TestCase):
     def setUp(self):
