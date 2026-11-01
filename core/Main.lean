@@ -44,10 +44,12 @@ def probe (path : String) : IO Unit := do
     let i ← liftE path (Flac.probe d)
     IO.println (formatJson i.format i.totalSamples "flac").compress
   else
-    let x ← liftE path (Wav.parse d)
-    -- The app converts what this rejects, so reject here what `export` would.
-    liftE path x.validate
-    IO.println (formatJson x.format x.length "wav").compress
+    let (f, _, frames) ← liftE path (Wav.header d)
+    -- The app converts what this rejects, so reject here what `export` would. Parsed samples
+    -- are always in range for their size, so the format decides.
+    liftE path (Pcm.validate ⟨f, #[]⟩)
+    unless frames < 2 ^ 36 do throw (IO.userError s!"{path}: too long for FLAC")
+    IO.println (formatJson f frames "wav").compress
 
 /-- Per bucket, min and max of the channel average, in units of 1/10000 of full scale. -/
 def peaks (x : Pcm) (buckets : Nat) : Array Int × Array Int := Id.run do

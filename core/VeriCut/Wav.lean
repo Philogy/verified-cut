@@ -16,8 +16,12 @@ def tag (d : ByteArray) (i : Nat) : String :=
   String.ofList ((List.range 4).map fun j => Char.ofNat d[i + j]!.toNat)
 
 /-- Signed little-endian sample of `bytes` bytes at `i`. -/
-def sampleAt (d : ByteArray) (bytes i : Nat) : Int :=
-  let u := (List.range bytes).foldr (fun j acc => (acc <<< 8) ||| d[i + j]!.toNat) 0
+@[inline] def sampleAt (d : ByteArray) (bytes i : Nat) : Int :=
+  let u := match bytes with
+    | 1 => d[i]!.toNat
+    | 2 => d[i]!.toNat ||| (d[i + 1]!.toNat <<< 8)
+    | 3 => d[i]!.toNat ||| (d[i + 1]!.toNat <<< 8) ||| (d[i + 2]!.toNat <<< 16)
+    | _ => d[i]!.toNat ||| (d[i + 1]!.toNat <<< 8) ||| (d[i + 2]!.toNat <<< 16) ||| (d[i + 3]!.toNat <<< 24)
   if bytes = 1 then (u : Int) - 128
   else if u < 2 ^ (8 * bytes - 1) then u else (u : Int) - 2 ^ (8 * bytes)
 
@@ -45,6 +49,14 @@ def chunks (d : ByteArray) (i : Nat) (fmt : Option Fmt) (fuel : Nat) : Except St
       | none => .error "data chunk before fmt chunk"
       | some f => .ok (f, body, min (body + size) d.size)
     | _ => chunks d (body + size + size % 2) fmt fuel
+
+/-- The format, and where the samples are and how many (per channel) there are. -/
+def header (d : ByteArray) : Except String (Format × Nat × Nat) := do
+  if d.size < 12 || tag d 0 != "RIFF" || tag d 8 != "WAVE" then throw "not a WAV file"
+  let (f, start, stop) ← chunks d 12 none d.size
+  if f.channels = 0 then throw "WAV with no channels"
+  if f.bits < 4 || f.bits > 32 then throw s!"unsupported WAV sample size {f.bits}"
+  pure (⟨f.sampleRate, f.channels, f.bits⟩, start, (stop - start) / ((f.bits + 7) / 8 * f.channels))
 
 def parse (d : ByteArray) : Except String Pcm := do
   if d.size < 12 || tag d 0 != "RIFF" || tag d 8 != "WAVE" then throw "not a WAV file"
