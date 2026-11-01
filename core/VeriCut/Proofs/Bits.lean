@@ -18,7 +18,7 @@ def natBits : Nat → Nat → List Bool
 
 def bitsOf (d : ByteArray) : List Bool := d.data.toList.flatMap fun b => natBits 8 b.toNat
 
-def Writer.bits (w : Writer) : List Bool := bitsOf w.bytes ++ natBits w.n w.acc
+def Writer.bits (w : Writer) : List Bool := bitsOf w.bytes ++ natBits w.n w.acc.toNat
 
 def Encodes (f : Writer → Writer) (l : List Bool) : Prop := ∀ w, (f w).bits = w.bits ++ l
 
@@ -159,35 +159,69 @@ theorem extract_of_drop {d b : ByteArray} {pos : Nat} {t : List Bool} (hpos : po
 
 /-! ## Writer -/
 
-theorem flush_bits (bytes : ByteArray) (acc n : Nat) :
-    (Writer.flush bytes acc n).bits = bitsOf bytes ++ natBits n acc := by
-  induction n using Nat.strongRecOn generalizing bytes acc with
+theorem flush_bits (bytes : ByteArray) (acc : UInt64) (n : Nat) (h : n ≤ 64) :
+    (Writer.flush bytes acc n h).bits = bitsOf bytes ++ natBits n acc.toNat := by
+  induction n using Nat.strongRecOn generalizing bytes with
   | _ n ih =>
     unfold Writer.flush
     split
-    · rw [ih _ (by omega), bitsOf_push, List.append_assoc, natBits_mod _ _ _ (Nat.le_refl _)]
-      have e := natBits_add 8 (n - 8) acc
+    · rename_i h8
+      rw [ih _ (by omega), bitsOf_push, List.append_assoc]
+      have e := natBits_add 8 (n - 8) acc.toNat
       rw [show 8 + (n - 8) = n by omega] at e
-      rw [e, Nat.shiftRight_eq_div_pow]
+      rw [e]
       congr 2
-      rw [Nat.toUInt8, UInt8.toNat_ofNat', show (2 : Nat) ^ 8 = 2 ^ 8 from rfl] <;> try rfl
+      have hs : ((n - 8).toUInt64).toNat = n - 8 := by
+        rw [Nat.toUInt64, UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+      rw [UInt64.toNat_toUInt8, UInt64.toNat_shiftRight, hs, Nat.mod_eq_of_lt (by omega : n - 8 < 64),
+        Nat.shiftRight_eq_div_pow]
       exact natBits_mod 8 8 _ (Nat.le_refl _)
     · rfl
 
-theorem flush_n_lt (bytes : ByteArray) (acc n : Nat) : (Writer.flush bytes acc n).n < 8 := by
-  induction n using Nat.strongRecOn generalizing bytes acc with
-  | _ n ih =>
-    unfold Writer.flush
-    split
-    · exact ih _ (by omega) _ _
-    · simp; omega
+theorem toNat_low (v k : Nat) (hk : k ≤ 56) :
+    (v.toUInt64 &&& ((1 <<< k.toUInt64) - 1)).toNat = v % 2 ^ k := by
+  have hk' : (k.toUInt64).toNat = k := by
+    rw [Nat.toUInt64, UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+  have hp : (2 : Nat) ^ k < 2 ^ 64 := Nat.pow_lt_pow_right (by decide) (by omega)
+  have h1 : ((1 : UInt64) <<< k.toUInt64).toNat = 2 ^ k := by
+    rw [UInt64.toNat_shiftLeft, hk', Nat.mod_eq_of_lt (by omega : k < 64)]
+    simp [Nat.one_shiftLeft, Nat.mod_eq_of_lt hp]
+  have h2 : ((1 : UInt64) <<< k.toUInt64 - 1).toNat = 2 ^ k - 1 := by
+    rw [UInt64.toNat_sub_of_le _ _ (by rw [UInt64.le_iff_toNat_le, h1]; simp; exact Nat.one_le_two_pow), h1]
+    rfl
+  rw [UInt64.toNat_and, h2, Nat.and_two_pow_sub_one_eq_mod, Nat.toUInt64, UInt64.toNat_ofNat',
+    Nat.mod_mod_of_dvd _ (Nat.pow_dvd_pow 2 (by omega))]
+
+theorem writeFast_bits (w : Writer) (k v : Nat) (hk : k ≤ 56) :
+    (w.writeFast k v hk).bits = w.bits ++ natBits k v := by
+  unfold Writer.writeFast
+  have hn := w.n_lt
+  have hk' : (k.toUInt64).toNat = k := by
+    rw [Nat.toUInt64, UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+  rw [flush_bits]
+  simp only [Writer.bits, List.append_assoc]
+  congr 1
+  have hle : w.n + k ≤ 64 := by omega
+  rw [UInt64.toNat_add, UInt64.toNat_shiftLeft, hk', Nat.mod_eq_of_lt (by omega : k < 64), toNat_low v k hk,
+    Nat.shiftLeft_eq, natBits_mod _ _ _ hle]
+  rw [← natBits_mod (w.n + k) 64 _ hle, Nat.add_mod, Nat.mod_mod,
+    ← Nat.add_mod, natBits_mod _ _ _ hle, natBits_mul_add _ _ _ _ (Nat.mod_lt _ (Nat.two_pow_pos k)),
+    natBits_mod _ _ _ (Nat.le_refl _)]
+
+theorem writeBits_bits (w : Writer) (k v : Nat) : (w.writeBits k v).bits = w.bits ++ natBits k v := by
+  induction k generalizing v with
+  | zero => simp [Writer.writeBits]
+  | succ k ih =>
+    rw [Writer.writeBits, writeFast_bits, ih, List.append_assoc]
+    congr 1
+    have e := natBits_add k 1 v
+    rw [e, Nat.shiftRight_eq_div_pow]
 
 theorem write_bits (w : Writer) (k v : Nat) : (w.write k v).bits = w.bits ++ natBits k v := by
   unfold Writer.write
-  rw [flush_bits]
-  simp only [Writer.bits, Nat.shiftLeft_eq]
-  rw [natBits_mul_add _ _ _ _ (Nat.mod_lt _ (Nat.two_pow_pos k)), natBits_mod _ _ _ (Nat.le_refl _)]
-  simp
+  split
+  · exact writeFast_bits _ _ _ _
+  · exact writeBits_bits _ _ _
 
 theorem length_bits (w : Writer) : w.bits.length = 8 * w.bytes.size + w.n := by
   simp [Writer.bits]
@@ -197,7 +231,7 @@ theorem bits_aligned (w : Writer) (hn : w.n < 8) (h : w.bits.length % 8 = 0) : w
   have : w.n = 0 := by rw [length_bits] at h; omega
   simp [Writer.bits, this]
 
-theorem write_n_lt (w : Writer) (k v : Nat) : (w.write k v).n < 8 := flush_n_lt _ _ _
+theorem write_n_lt (w : Writer) (k v : Nat) : (w.write k v).n < 8 := (w.write k v).n_lt
 
 theorem encodes_write (k v : Nat) : Encodes (·.write k v) (natBits k v) := fun w => write_bits w k v
 
@@ -329,6 +363,12 @@ theorem congr {f g : Writer → Writer} {p q : Parser α} {a b : α}
     (h : RoundTrip f p a) (hf : ∀ w, f w = g w) (hp : p = q) (ha : a = b) : RoundTrip g q b := by
   obtain ⟨l, e, d⟩ := h
   subst hp ha
+  exact ⟨l, fun w => by rw [← hf]; exact e w, d⟩
+
+/-- Writers that append the same bits are interchangeable. -/
+theorem congrBits {f g : Writer → Writer} {p : Parser α} {a : α}
+    (h : RoundTrip f p a) (hf : ∀ w, (f w).bits = (g w).bits) : RoundTrip g p a := by
+  obtain ⟨l, e, d⟩ := h
   exact ⟨l, fun w => by rw [← hf]; exact e w, d⟩
 
 theorem check {c : Bool} (msg : String) (h : c = true) : RoundTrip id (Parser.check c msg) () :=

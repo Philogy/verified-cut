@@ -22,8 +22,11 @@ def tag (d : ByteArray) (i : Nat) : String :=
     | 2 => d[i]!.toNat ||| (d[i + 1]!.toNat <<< 8)
     | 3 => d[i]!.toNat ||| (d[i + 1]!.toNat <<< 8) ||| (d[i + 2]!.toNat <<< 16)
     | _ => d[i]!.toNat ||| (d[i + 1]!.toNat <<< 8) ||| (d[i + 2]!.toNat <<< 16) ||| (d[i + 3]!.toNat <<< 24)
-  if bytes = 1 then (u : Int) - 128
-  else if u < 2 ^ (8 * bytes - 1) then u else (u : Int) - 2 ^ (8 * bytes)
+  match bytes with
+  | 1 => (u : Int) - 128
+  | 2 => if u < 0x8000 then u else (u : Int) - 0x10000
+  | 3 => if u < 0x800000 then u else (u : Int) - 0x1000000
+  | _ => if u < 0x80000000 then u else (u : Int) - 0x100000000
 
 structure Fmt where
   channels : Nat
@@ -69,7 +72,7 @@ def parseFrames (d : ByteArray) (first count : Nat) : Except String Pcm := do
   let at0 := start + first * f.channels * bytes
   let mut s := Array.emptyWithCapacity n
   for k in [0:n] do
-    s := s.push (sampleAt d bytes (at0 + k * bytes) / 2 ^ shift)
+    s := s.push (sampleAt d bytes (at0 + k * bytes) >>> shift)
   return ⟨f, s⟩
 
 def parse (d : ByteArray) : Except String Pcm := do
@@ -102,9 +105,10 @@ def write (x : Pcm) : ByteArray := Id.run do
     d := [0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71].foldl (fun d b => d.push b) d
   d := "data".toUTF8.foldl (·.push ·) d
   d := pushLE d 4 dataSize
+  let m : Int := 2 ^ (8 * bytes)
   for v in x.samples do
-    let v := v * 2 ^ shift
-    d := pushLE d bytes (if bytes = 1 then (v + 128).toNat else (v % 2 ^ (8 * bytes)).toNat)
+    let v := v <<< shift
+    d := pushLE d bytes (if bytes = 1 then (v + 128).toNat else (v % m).toNat)
   return d
 
 end VeriCut.Wav

@@ -4,25 +4,37 @@ Bit writer and bit reader, most significant bit first (FLAC's order).
 
 namespace VeriCut
 
-/-- The bytes written so far, then `n` pending bits `acc` that don't fill a byte. -/
+/-- The bytes written so far, then the low `n` bits of `acc`, which don't fill a byte. -/
 structure Writer where
   bytes : ByteArray
-  acc : Nat
+  acc : UInt64
   n : Nat
+  n_lt : n < 8
 
 namespace Writer
 
-def empty : Writer := ⟨.empty, 0, 0⟩
+def empty : Writer := ⟨.empty, 0, 0, by decide⟩
 
-def flush (bytes : ByteArray) (acc n : Nat) : Writer :=
-  if 8 ≤ n then flush (bytes.push (acc >>> (n - 8)).toUInt8) (acc % 2 ^ (n - 8)) (n - 8)
-  else ⟨bytes, acc, n⟩
+/-- Move the whole bytes of the `n ≤ 64` pending bits `acc` (its low `n`) to `bytes`. -/
+def flush (bytes : ByteArray) (acc : UInt64) (n : Nat) (h : n ≤ 64) : Writer :=
+  if h8 : 8 ≤ n then flush (bytes.push (acc >>> (n - 8).toUInt64).toUInt8) acc (n - 8) (by omega)
+  else ⟨bytes, acc, n, by omega⟩
 termination_by n
 decreasing_by omega
 
+/-- Append the low `k ≤ 56` bits of `v`, through the 64-bit buffer at once. -/
+@[inline] def writeFast (w : Writer) (k v : Nat) (h : k ≤ 56) : Writer :=
+  let low := v.toUInt64 &&& ((1 <<< k.toUInt64) - 1)
+  flush w.bytes ((w.acc <<< k.toUInt64) + low) (w.n + k) (by have := w.n_lt; omega)
+
+/-- Append the low `k` bits of `v` one at a time. -/
+def writeBits (w : Writer) : Nat → Nat → Writer
+  | 0, _ => w
+  | k + 1, v => (writeBits w k (v >>> 1)).writeFast 1 v (by decide)
+
 /-- Append the low `k` bits of `v`. -/
 def write (w : Writer) (k v : Nat) : Writer :=
-  flush w.bytes ((w.acc <<< k) + v % 2 ^ k) (w.n + k)
+  if h : k ≤ 56 then w.writeFast k v h else w.writeBits k v
 
 /-- Append `k` zero bits. -/
 def zeros (w : Writer) (k : Nat) : Writer :=

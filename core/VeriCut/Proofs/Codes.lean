@@ -43,16 +43,44 @@ theorem unzigzag_zigzag (v : Int) : unzigzag (zigzag v) = v := by
   unfold zigzag unzigzag
   split <;> split <;> omega
 
-theorem write_mod (w : Writer) (k v : Nat) : w.write k (v % 2 ^ k) = w.write k v := by
-  simp [Writer.write]
+theorem natBits_one (q : Nat) : natBits (q + 1) 1 = List.replicate q false ++ [true] := by
+  rw [natBits_add, show 1 / 2 ^ 1 = 0 by rfl, natBits_zero_eq_replicate]
+  rfl
+
+theorem writeRice_bits (k : Nat) (w : Writer) (v : Int) :
+    (writeRice k w v).bits = ((((w.zeros (zigzag v >>> k)).write 1 1).write k (zigzag v % 2 ^ k))).bits := by
+  unfold writeRice
+  simp only [write_bits, zeros_bits, natBits_mod _ _ _ (Nat.le_refl _), List.append_assoc]
+  split
+  · rename_i hq
+    have hk : k ≤ 55 := by generalize zigzag v >>> k = q at hq; omega
+    have hlow := toNat_low (zigzag v) k (by omega)
+    have hp : (2 : Nat) ^ k < 2 ^ 63 := Nat.pow_lt_pow_right (by decide) (by omega)
+    have h1 : ((1 : UInt64) <<< k.toUInt64).toNat = 2 ^ k := by
+      have hk' : (k.toUInt64).toNat = k := by
+        rw [Nat.toUInt64, UInt64.toNat_ofNat']; exact Nat.mod_eq_of_lt (by omega)
+      rw [UInt64.toNat_shiftLeft, hk', Nat.mod_eq_of_lt (by omega : k < 64)]
+      have hp' : (2 : Nat) ^ k < 2 ^ 64 := Nat.lt_trans hp (by decide)
+      simp [Nat.one_shiftLeft, Nat.mod_eq_of_lt hp']
+    have hm : (((zigzag v).toUInt64 &&& ((1 : UInt64) <<< k.toUInt64 - 1)) + (1 : UInt64) <<< k.toUInt64).toNat =
+        2 ^ k + zigzag v % 2 ^ k := by
+      rw [UInt64.toNat_add, hlow, h1, Nat.mod_eq_of_lt (by have := Nat.mod_lt (zigzag v) (Nat.two_pow_pos k); omega)]
+      omega
+    rw [write_bits, hm]
+    have e := natBits_mul_add (zigzag v >>> k + 1) k 1 (zigzag v % 2 ^ k) (Nat.mod_lt _ (Nat.two_pow_pos k))
+    rw [Nat.one_mul] at e
+    rw [e, natBits_one, natBits_mod _ _ _ (Nat.le_refl _)]
+    simp [natBits]
+  · simp [zeros_bits, write_bits]
 
 theorem roundTrip_rice (k : Nat) (v : Int) : RoundTrip (writeRice k · v) (riceP k) v := by
+  refine RoundTrip.congrBits ?_ (fun w => (writeRice_bits k w v).symm)
   rt roundTrip_unary (zigzag v >>> k)
   rt RoundTrip.readBits k (zigzag v % 2 ^ k) (Nat.mod_lt _ (Nat.two_pow_pos k))
   · refine RoundTrip.pure' ?_
     rw [Nat.shiftRight_eq_div_pow, Nat.mul_comm, Nat.div_add_mod, unzigzag_zigzag]
   · intro w; rfl
-  · intro w; simp only [writeRice, write_mod, id]
+  · intro w; rfl
 
 /-! ## Frame numbers -/
 
