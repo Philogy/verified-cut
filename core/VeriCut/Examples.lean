@@ -95,4 +95,38 @@ example : decode toy (twoClips.exportWith fun j => intraEnc (if j.clip = 0 then 
 #guard ((exportTimeline (m := PureEncode Nat) [(gop2, plan gop2 ⟨1, 5⟩)]).run (intraEnc gop2)).flatten
   == [[{ data := 12 }, { data := 123 }], [{ data := 4, pts := 3 }, { data := 5, refs := [0], pts := 4 }]]
 
+/-! ## Audio
+
+A toy audio codec with two samples per packet that, like AAC, mixes in the
+previous packet: decoded alone, a packet sounds different. -/
+
+def toyAudio : AudioCodec Nat Nat where
+  frame prev p := [p + 10 * prev.getD 0, p]
+
+/-- The hypothesis of `exportAudio_exact` holds. -/
+example : toyAudio.FrameLength 2 := fun _ _ => rfl
+
+/-- Six packets, samples `0 … 11`. -/
+def tone : List Nat := [1, 2, 3, 4, 5, 6]
+
+/-- Two clips of one source at 1 Hz video and 2 Hz audio: video seconds
+`[2, 4)` and `[1, 2)` (source sample `2 t`), then 1 s from a silent source. -/
+def audioClips : List (AudioClip Nat) :=
+  [⟨tone, 12, 4, 2⟩, ⟨tone, 12, 2, 1⟩, ⟨[], 0, 0, 1⟩]
+
+-- The exporter plays exactly the source samples of each clip, then silence.
+#guard let (ps, es) := exportAudioClips 2 2 1 audioClips
+  present 0 (decodeAudio toyAudio ps) es == ((decodeAudio toyAudio tone).drop 4).take 4 ++
+    ((decodeAudio toyAudio tone).drop 2).take 2 ++ [0, 0]
+
+-- It copies a pre-roll packet before the second cut: without it (packets
+-- `3, 4` then `2`), packet `2` decodes after packet `4` and sounds wrong.
+#guard decodeAudio toyAudio [3, 4, 2] ≠ ((decodeAudio toyAudio tone).drop 4).take 4 ++
+    ((decodeAudio toyAudio tone).drop 2).take 2
+
+-- The source's first packet has nothing before it, so only the timeline's
+-- first cut can play it; a later cut plays silence there.
+#guard let (ps, es) := exportAudioClips 2 2 1 [⟨tone, 12, 4, 1⟩, ⟨tone, 12, 0, 1⟩]
+  present 0 (decodeAudio toyAudio ps) es == ((decodeAudio toyAudio tone).drop 4).take 2 ++ [0, 0]
+
 end VeriCut.Examples
