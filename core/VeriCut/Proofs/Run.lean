@@ -26,6 +26,10 @@ def renderFrom (f : Job → Stream α) : Nat → List (Stream α × List Segment
   | _, [] => []
   | i, (s, segs) :: rest => segs.map (Segment.renderWith i s f) :: renderFrom f (i + 1) rest
 
+theorem extractA_toArray (s : Stream α) (ks : List Nat) : extractA s.toArray ks = extract s ks := by
+  simp only [extractA, extract, Array.getD_eq_getD_getElem?, List.getElem?_toArray,
+    List.getD_eq_getElem?_getD]
+
 omit [Inhabited α] in
 theorem mapM_run {β γ : Type} (g : β → PureEncode α γ) (f : Job → Stream α) (xs : List β) :
     (xs.mapM g).run f = xs.map fun x => (g x).run f := by
@@ -44,7 +48,9 @@ theorem exportFrom_run (f : Job → Stream α) (i : Nat) (clips : List (Stream �
     obtain ⟨s, segs⟩ := x
     have hseg : (fun seg => (renderSegment (m := PureEncode α) i s seg).run f) =
         Segment.renderWith i s f := by
-      funext seg; cases seg <;> rfl
+      funext seg; cases seg
+      · exact extractA_toArray s _
+      · rfl
     have h1 := mapM_run (renderSegment (m := PureEncode α) i s) f segs
     rw [hseg] at h1
     simp only [exportFrom, renderFrom]

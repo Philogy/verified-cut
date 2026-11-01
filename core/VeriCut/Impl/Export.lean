@@ -18,9 +18,15 @@ class MonadEncode (α : outParam Type) (m : Type → Type) where
 
 variable {α : Type} [Inhabited α] {m : Type → Type} [Monad m] [MonadEncode α m]
 
+/-- `extract`, indexing the stream as an array (a list index is O(n)). -/
+def extractA (a : Array (Packet α)) (ks : List Nat) : Stream α :=
+  ks.map fun k =>
+    let p := a.getD k default
+    { p with refs := p.refs.map (ks.idxOf ·) }
+
 /-- The packets one segment of clip number `clip` (source `s`) contributes. -/
 def renderSegment (clip : Nat) (s : Stream α) : Segment → m (Stream α)
-  | .copy ks => pure (extract s ks)
+  | .copy ks => pure (extractA s.toArray ks)
   | .encode ks => MonadEncode.encode { clip, frames := ks }
 
 /-- Render the segments of clips `i, i+1, …`. -/
