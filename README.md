@@ -17,7 +17,10 @@ tests/    end-to-end tests against libFLAC (`flac`) and ffmpeg, plus a proof aud
 brew install flac ffmpeg          # reference codec for tests; ffmpeg for the app's imports
 cd core && lake build             # proofs + the vericut binary (Lean v4.33.0, no Mathlib)
 cd .. && python3 tests/test_vericut.py
+cd app && swift run               # the editor; uses ../core/.lake/build/bin/vericut ($VERICUT_BIN overrides)
 ```
+
+`app/dev/vericut-stub` is an unverified ffmpeg stand-in for app development only (`app/dev/README.md`).
 
 CLI contract: `docs/cli.md`.
 

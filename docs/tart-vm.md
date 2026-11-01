@@ -26,8 +26,9 @@ scripts/vm.sh start            # from a logged-in host session (Tart needs the l
 scripts/vm.sh install          # lake build + swift build on the host, copy the app into the guest
 VERICUT_BIN=$PWD/app/dev/vericut-stub scripts/vm.sh install   # same, with the ffmpeg stub instead of core/
 scripts/vm.sh launch
-scripts/vm.sh import "/Volumes/My Shared Files/vc/samples/synth/tone440.wav"
+scripts/vm.sh import "/Volumes/My Shared Files/vc/samples/audio/meme_vine_boom.wav"
 scripts/vm.sh step 1 in 100    # clip 1, In stepper, 100 clicks up (out = Out, negative = down)
+scripts/vm.sh type 3 in 44100000   # type a sample number into clip 3's In field and press return
 scripts/vm.sh drag 1 in 40     # drag clip 1's In handle 40 points right with cliclick; prints the new In sample
 scripts/vm.sh rulerclick 300   # click the ruler 300 points from its left edge (seeks); prints the transport time
 scripts/vm.sh value transport.time   # value of any control by accessibility id
@@ -89,30 +90,25 @@ ids repeat in each. `clipRow(n)` and `clipLane(n)` in `lib.applescript` find the
 | `clip.waveform` | AXUnknown | the waveform (on-screen part only; absent until peaks load) |
 | `clip.in.handle`, `clip.out.handle` | AXUnknown | trim handles; drag (snaps to samples), or AX increment/decrement by one sample |
 
-## What was checked (audio app, Nov 2026, with the stub)
+## What was checked (audio app, Nov 2026, real `vericut`)
 
-- Import of WAV, 16-bit FLAC, MP3, 24-bit FLAC and 48 kHz/24-bit mono WAV (the last three
-  converted, with the badge), drag and stepper trims, reorder, playback, export at level 5.
-  A four-clip export from the UI (2,622,213 samples) decodes bit-exact to the concatenated
-  source ranges (checked on the host with ffmpeg).
-- A 61 min, 647 MB podcast WAV: peaks, fit, trim, export (162,024,759 samples, ~3 s).
-- Scrolling at high zoom: the waveform and ruler redraw for the visible span.
+- Import of `meme_vine_boom.wav`, `music_relaxing_piano.wav` and the 61 min podcast WAV;
+  waveforms for all three (podcast peaks take about 10 s); trims by stepper and by typing
+  (`type`), Fit; export at level 5 through the save panel. The 3-clip export (3,280,549
+  samples, 9 s in the guest) passes `flac -t` and decodes bit-exact to the concatenated
+  source ranges. A 48 kHz mono float WAV is rejected by `probe`, converted by ffmpeg on
+  import (⟲ badge), and a 4-clip export with it decodes to the expected sample count.
+- Earlier, with the stub: WAV, 16/24-bit FLAC, MP3 and 48 kHz/24-bit mono imports,
+  drag trims, reorder, playback; scrolling at high zoom redraws the visible span.
 - To scroll from a script, set the horizontal `AXScrollBar`'s value (0…1) via System Events.
 
-## What was checked (video app, macOS 26.6.2 guest on a 26.5.1 host, Oct 2026)
+## Guest notes (macOS 26.6.2 guest on a 26.5.1 host, Oct 2026)
 
 - Over plain SSH, no manual permission pass was needed: AX queries/clicks,
-  keystrokes and `screencapture` (stills and `-v` video) all work. macOS shows a
+  keystrokes and `screencapture` (stills and `-v` recordings) all work. macOS shows a
   "com.apple.sshd-session … access your screen" dialog. Capture still works,
   and `launch` clicks Allow via AX (`scripts/vm/allow.applescript`).
-- Import → trim → export through the open and save panels, driven by the ids above. `bbb_baseline.mp4` [100, 700)
-  gives 572 copied / 28 re-encoded, the same as the README, and the 600-frame output decodes.
-- Hardware VideoToolbox works in the guest: macOS 26 exposes a paravirtualized AVC
-  encoder (`paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc`,
-  hardware-accelerated). `-allow_sw 0` succeeds, and 10 s of 1080p encodes in about 1 s.
-  It is a different encoder ID from the host's, so bitstreams may differ from host exports.
-- `tests/test_vericut.py` in the guest: 12/13 pass with libx264 and with
-  `h264_videotoolbox`. `test_axioms` fails because it needs `lake` (run it on the host).
+- `tests/test_vericut.py` needs `lake` for its axiom test: run it on the host.
 
 ## Known limits
 
