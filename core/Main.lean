@@ -112,13 +112,21 @@ def seekFor (t : VideoTrack) (ranks : Array Nat) (frames : List Nat) : Option Se
   -- whole frame earlier, so ffmpeg's accurate seek drops it.
   pure { us := cts.toNat * 1000000 / t.timescale, rank := ranks[k]! }
 
+/-- The encoder when `--encoder` is not given: `$VERICUT_ENCODER`, else Apple's
+hardware H.264 encoder on macOS, else libx264. -/
+def defaultEncoder : IO String := do
+  pure <| (← IO.getEnv "VERICUT_ENCODER").getD
+    (if System.Platform.isOSX then "h264_videotoolbox" else "libx264")
+
 /-- Re-encode display frames `[a, b]` of `src` with an ffmpeg encoder, decoding
 from `seek`. This is the only place pixels are touched. The encoder is trusted
 (`Encoder` contract in `Spec/Export.lean`), and the result is checked to have
 the right frame count, codec and no reordering. -/
 def encodeRange (o : Opts) (src : String) (codec : String) (a b : Nat) (seek : Option Seek)
     (tmp : String) : IO (ByteArray × VideoTrack) := do
-  let enc := o.encoder.getD "libx264"
+  let enc ← match o.encoder with
+    | some e => pure e
+    | none => defaultEncoder
   let extra := if o.encoderArgs.isEmpty then defaultArgs enc else o.encoderArgs
   -- `-seek_timestamp 1`: `-ss` is the stream timestamp, not relative to the
   -- file's start time (which other tracks, e.g. audio, can move).
@@ -126,15 +134,21 @@ def encodeRange (o : Opts) (src : String) (codec : String) (a b : Nat) (seek : O
     | some s => (#["-seek_timestamp", "1", "-ss",
         s!"{s.us / 1000000}.{(toString (s.us % 1000000 + 1000000)).drop 1}"], s.rank)
     | none => (#[], 0)
-  let run := fun (sync : Array String) => IO.Process.output {
+  let run := fun (hw : Array String) (sync : Array String) => IO.Process.output {
     cmd := o.ffmpeg,
-    args := #["-v", "error", "-y", "-ignore_editlist", "1"] ++ ss ++ #["-i", src,
+    args := #["-v", "error", "-y", "-ignore_editlist", "1"] ++ hw ++ ss ++ #["-i", src,
       "-map", "0:v:0", "-an",
       "-vf", s!"select=between(n\\,{a - r0}\\,{b - r0}),setpts=N/FRAME_RATE/TB",
       "-frames:v", toString (b + 1 - a)] ++ sync ++
       #["-c:v", enc] ++ extra ++ #["-f", "mp4", tmp] }
-  let mut out ← run #["-fps_mode", "passthrough"]
-  if out.exitCode != 0 then out ← run #["-vsync", "0"]
+  -- Hardware decode first; software decode if this ffmpeg or source can't.
+  -- Older ffmpeg lacks `-fps_mode` and wants `-vsync 0`.
+  let hw := if System.Platform.isOSX then #[#["-hwaccel", "videotoolbox"], #[]] else #[#[]]
+  let attempts := hw.flatMap fun h =>
+    #[(h, #["-fps_mode", "passthrough"]), (h, #["-vsync", "0"])]
+  let mut out : IO.Process.Output := { exitCode := 1, stdout := "", stderr := "" }
+  for (h, sync) in attempts do
+    if out.exitCode != 0 then out ← run h sync
   if out.exitCode != 0 then throw (IO.userError s!"encoder failed: {out.stderr}")
   let (bytes, t) ← loadTrack tmp
   if t.samples.size != b + 1 - a then
