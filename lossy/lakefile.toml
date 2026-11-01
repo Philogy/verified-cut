@@ -1,0 +1,10 @@
+name = "lossy"
+version = "0.1.0"
+defaultTargets = ["Lossy", "lossy"]
+
+[[lean_lib]]
+name = "Lossy"
+
+[[lean_exe]]
+name = "lossy"
+root = "Main"
