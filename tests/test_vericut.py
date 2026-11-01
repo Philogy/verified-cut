@@ -14,7 +14,7 @@ Env:  VERICUT_BIN      path to the vericut binary (default core/.lake/build/bin/
                         use h264_videotoolbox on a Mac for the hardware path)
       FFMPEG / FFPROBE  tool paths
 """
-import json, math, os, subprocess, tempfile, unittest
+import array, fractions, json, math, os, shutil, struct, subprocess, sys, tempfile, unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.environ.get("VERICUT_BIN", os.path.join(ROOT, "core/.lake/build/bin/vericut"))
@@ -36,9 +36,22 @@ OPEN_GOP_ARGS = ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-t", "4"
                  "-x264-params", "keyint=24:min-keyint=24:scenecut=0:open-gop=1"]
 
 
+# H.264 + AAC-LC with a non-periodic chirp, so a misaligned cut can't match by
+# accident. Same size and rate as gop30_nob.mp4 (no audio), so they share a timeline.
+# PNS is off: its noise bands are random in the decoder, so they never decode
+# the same twice.
+AV = "av_chirp.mp4"
+AV_ARGS = ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30", "-f", "lavfi", "-i",
+           "aevalsrc=0.3*sin(2*PI*(200+300*t)*t)|0.3*sin(2*PI*(500+70*t*t)*t):s=48000",
+           "-t", "6", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-bf", "0",
+           "-x264-params", "keyint=30:min-keyint=30:scenecut=0", "-c:a", "aac", "-aac_pns", "0", "-b:a", "128k"]
+
+
 def setUpModule():
     if not os.path.exists(sample(OPEN_GOP)):
         run([FFMPEG, "-v", "error", "-y", *OPEN_GOP_ARGS, sample(OPEN_GOP)])
+    if not os.path.exists(sample(AV)):
+        run([FFMPEG, "-v", "error", "-y", *AV_ARGS, sample(AV)])
 
 
 def run(args, check=True):
@@ -306,13 +319,170 @@ class RejectionTests(Base):
         self.assertIn("differs", p.stderr)
 
 
+def mp4_boxes(b, s, e):
+    while s + 8 <= e:
+        sz, = struct.unpack(">I", b[s:s + 4])
+        t, h = b[s + 4:s + 8].decode("latin1"), 8
+        if sz == 1:
+            sz, = struct.unpack(">Q", b[s + 8:s + 16])
+            h = 16
+        yield t, s + h, s + sz
+        s += sz
+
+
+def audio_edits(path):
+    """The audio track's edit list as (samples, media time or -1), read independently of vericut."""
+    with open(path, "rb") as f:
+        b = f.read()
+    moov = next(x for x in mp4_boxes(b, 0, len(b)) if x[0] == "moov")
+    kids = list(mp4_boxes(b, *moov[1:]))
+    mvhd = next(x for x in kids if x[0] == "mvhd")
+    mts, = struct.unpack(">I", b[mvhd[1] + (20 if b[mvhd[1]] == 1 else 12):][:4])
+    for t in kids:
+        if t[0] != "trak":
+            continue
+        tk = list(mp4_boxes(b, *t[1:]))
+        md = list(mp4_boxes(b, *next(x for x in tk if x[0] == "mdia")[1:]))
+        hdlr = next(x for x in md if x[0] == "hdlr")
+        if b[hdlr[1] + 8:hdlr[1] + 12] != b"soun":
+            continue
+        mdhd = next(x for x in md if x[0] == "mdhd")
+        ats, = struct.unpack(">I", b[mdhd[1] + (20 if b[mdhd[1]] == 1 else 12):][:4])
+        el = next(mp4_boxes(b, *next(x for x in tk if x[0] == "edts")[1:]))
+        v, (n,), o, out = b[el[1]], struct.unpack(">I", b[el[1] + 4:el[1] + 8]), el[1] + 8, []
+        for _ in range(n):
+            if v == 1:
+                d, m = struct.unpack(">Qq", b[o:o + 16]); o += 20
+            else:
+                d, m = struct.unpack(">Ii", b[o:o + 8]); o += 12
+            assert d * ats % mts == 0, "audio edit not a whole number of samples"
+            out.append((d * ats // mts, m))
+        return out
+
+
+def pcm(args):
+    a = array.array("h")
+    a.frombytes(run_bytes([FFMPEG, "-v", "error", *args, "-map", "0:a:0", "-ac", "1", "-f", "s16le", "-"]))
+    return a
+
+
+def present(media, edits):
+    """What an ISO/IEC 14496-12 player plays: each edit's media samples, or silence."""
+    out = array.array("h")
+    for d, m in edits:
+        out.extend(array.array("h", [0]) * d if m < 0 else media[m:m + d])
+    return out
+
+
+def frame_times(path):
+    """Presentation time (s, exact) of each display frame, edit lists applied (ffprobe)."""
+    tb = run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=time_base",
+              "-of", "csv=p=0", path]).stdout.strip()
+    out = run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts",
+               "-of", "csv=p=0", path]).stdout
+    return sorted(int(l.split(",")[0]) * fractions.Fraction(tb) for l in out.split())
+
+
+def nearest(x):
+    """Round half up, as vericut's `sampleAt` does."""
+    return math.floor(x + fractions.Fraction(1, 2))
+
+
+def has_audio(path):
+    return "audio" in run([FFPROBE, "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0",
+                           path]).stdout
+
+
+class AudioTests(Base):
+    """AAC audio is copied with a one-packet pre-roll per cut and trimmed by the
+    edit list (`exportAudio_exact`, `exportAudio_synced`). Checked here against
+    sources decoded by ffmpeg and timed by ffprobe, not against vericut's own numbers."""
+
+    TIMELINES = [
+        [(AV, 45, 100), (AV, 7, 61), (AV, 150, 180)],
+        [(AV, 0, 40), ("gop30_nob.mp4", 10, 70), (AV, 100, 130)],   # middle clip has no audio
+        [("bbb_baseline.mp4", 500, 560), ("bbb_baseline.mp4", 10, 200), ("bbb_baseline.mp4", 1300, 1440)],
+    ]
+
+    def expected(self, clips, rate):
+        """Per clip: (source pcm, first source sample, output samples). The clip's
+        audio starts at the sample nearest its first frame's time; its length runs
+        to the sample nearest the next clip's start on the output clock."""
+        out, t = [], 0
+        for name, a, b in clips:
+            path = sample(name)
+            ft = frame_times(path)
+            dur = ft[1] - ft[0]
+            n = nearest((t + (b - a) * dur) * rate) - nearest(t * rate)
+            src = pcm(["-i", path]) if has_audio(path) else None
+            out.append((src, nearest(ft[a] * rate), n))
+            t += (b - a) * dur
+        return out
+
+    def test_every_cut_plays_its_source_samples(self):
+        for clips in self.TIMELINES:
+            with self.subTest(clips):
+                out, rep = self.export([(sample(p), a, b) for p, a, b in clips])
+                rate = rep["audio"]["rate"]
+                got = present(pcm(["-ignore_editlist", "1", "-i", out]), audio_edits(out))
+                pos = 0
+                for i, (src, start, n) in enumerate(self.expected(clips, rate)):
+                    want = src[start:start + n] if src is not None else array.array("h")
+                    want.extend(array.array("h", [0]) * (n - len(want)))  # past the source's end: silence
+                    seg = got[pos:pos + n]
+                    self.assertEqual(len(seg), n, f"clip {i}: audio length")
+                    bad = [k for k in range(n) if seg[k] != want[k]]
+                    self.assertEqual(bad, [], f"clip {i}: {len(bad)} samples differ from the source")
+                    pos += n
+                self.assertEqual(len(got), pos, "total audio length")
+                self.assertEqual(rep["audio"]["samples"], pos)
+
+    def test_audio_as_long_as_video(self):
+        for clips in self.TIMELINES:
+            with self.subTest(clips):
+                out, rep = self.export([(sample(p), a, b) for p, a, b in clips])
+                ft = frame_times(out)
+                video = len(ft) * (ft[1] - ft[0])
+                audio = fractions.Fraction(sum(d for d, _ in audio_edits(out)), rep["audio"]["rate"])
+                self.assertLessEqual(2 * abs(audio - video), fractions.Fraction(1, rep["audio"]["rate"]))
+
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("swiftc"), "AVFoundation (macOS)")
+    def test_avfoundation_plays_the_cuts(self):
+        """QuickTime/AVFoundation, the app's player, honours the multi-entry edit list."""
+        tool = os.path.join(self.tmp.name, "avpcm")
+        run(["swiftc", "-O", os.path.join(ROOT, "tests/avpcm.swift"), "-o", tool])
+
+        def av(path):
+            a = array.array("h")
+            a.frombytes(run_bytes([tool, path]))
+            return a
+
+        clips = self.TIMELINES[0]
+        out, rep = self.export([(sample(p), a, b) for p, a, b in clips])
+        got, src, pos = av(out), av(sample(AV)), 0
+        for i, (_, start, n) in enumerate(self.expected(clips, rep["audio"]["rate"])):
+            m = min(n, len(got) - pos)  # AVFoundation leaves out trailing empty edits
+            bad = [k for k in range(m) if abs(got[pos + k] - src[start + k]) > 1]
+            self.assertEqual(bad, [], f"clip {i}: AVFoundation output differs from the source")
+            pos += n
+
+    def test_no_audio_flag(self):
+        out, rep = self.export([(sample(AV), 45, 100)], "--no-audio")
+        self.assertFalse(has_audio(out))
+        self.assertIsNone(rep["audio"])
+
+    def test_video_unchanged_by_audio(self):
+        self.check_export([(sample(AV), 45, 100), (sample(AV), 7, 61)])
+
+
 class ProofAuditTests(unittest.TestCase):
     """The main theorems use no `sorry` and no axioms beyond Lean's standard three."""
 
     MAIN = ["picture_extract", "decode_extract", "decode_concatStreams", "export_correct",
             "export_exact", "copySet_copyable", "copyable_maximal", "table_eq_copyable",
             "plan_valid", "plan_covers", "plan_copy_copyable",
-            "exportTimeline_correct", "MP4.toStream_wellFormed"]
+            "exportTimeline_correct", "MP4.toStream_wellFormed",
+            "exportAudio_exact", "exportAudio_synced", "exportAudio_aligned"]
     ALLOWED = {"propext", "Classical.choice", "Quot.sound"}
 
     def test_axioms(self):

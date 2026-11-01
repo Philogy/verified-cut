@@ -7,3 +7,4 @@ __pycache__/
 samples/stock/
 samples/fetch_stock.sh
 samples/gop24_open.mp4
+samples/av_chirp.mp4

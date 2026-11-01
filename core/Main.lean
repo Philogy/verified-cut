@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import VeriCut.Impl.Planner
 import VeriCut.Impl.Export
+import VeriCut.Spec.Audio
 import VeriCut.MP4.Write
 
 /-!
@@ -9,7 +10,7 @@ import VeriCut.MP4.Write
     vericut probe  <file>                      frame table as JSON
     vericut plan   <timeline.json>             plan as JSON (no output written)
     vericut export <timeline.json> <out.mp4>   [--encoder NAME] [--encoder-args "..."]
-                                                [--ffmpeg PATH] [--strict]
+                                                [--ffmpeg PATH] [--strict] [--no-audio]
 
 timeline.json: {"clips": [{"path": "a.mp4", "in": 0, "out": 120}, ...]}
 `in`/`out` are display frame numbers, half-open, 0-based.
@@ -38,6 +39,13 @@ def loadTrack (path : String) : IO (ByteArray × VideoTrack) := do
   let t ← liftE path (parseVideo b)
   if t.samples.size == 0 then throw (IO.userError s!"{path}: no video samples")
   pure (b, t)
+
+/-- Read a file with its audio track (`parseMovie`). -/
+def loadMovie (path : String) : IO (ByteArray × Movie) := do
+  let b ← IO.FS.readBinFile path
+  let m ← liftE path (parseMovie b)
+  if m.video.samples.size == 0 then throw (IO.userError s!"{path}: no video samples")
+  pure (b, m)
 
 def segJson : Segment → Json
   | .copy ks => Json.mkObj [("kind", "copy"), ("frames", toJson ks.length),
@@ -74,6 +82,8 @@ structure Opts where
   description per distinct set (QuickTime/AVFoundation native), `inband` = one
   description, new SPS/PPS prepended at each switch. -/
   inband : Bool := false
+  /-- Drop the audio instead of copying it. -/
+  noAudio : Bool := false
 
 def parseOpts : List String → Opts → Except String Opts
   | [], o => .ok o
@@ -82,6 +92,7 @@ def parseOpts : List String → Opts → Except String Opts
     parseOpts r { o with encoderArgs := (v.splitOn " ").filter (· != "") |>.toArray }
   | "--ffmpeg" :: v :: r, o => parseOpts r { o with ffmpeg := v }
   | "--strict" :: r, o => parseOpts r { o with strict := true }
+  | "--no-audio" :: r, o => parseOpts r { o with noAudio := true }
   | "--paramsets" :: "inband" :: r, o => parseOpts r { o with inband := true }
   | "--paramsets" :: "stsd" :: r, o => parseOpts r { o with inband := false }
   | x :: _, _ => .error s!"unknown option {x}"
@@ -192,6 +203,49 @@ instance : MonadEncode Pkt ExportM where
     -- `encodeRange` checked there is no reordering: output frame `k` shows at `a + k`.
     pure (pktStream srcs.size et (a + ·))
 
+/-- An audio packet the exporter copies: buffer `src`, bytes `[offset, offset + size)`,
+sample description `entry` (index into the output's audio descriptions). -/
+structure APkt where
+  src    : Nat
+  offset : Nat
+  size   : Nat
+  entry  : Nat
+  deriving Inhabited
+
+/-- The format a timeline's audio must share: sample rate, channels, samples per packet. -/
+structure AudioFormat where
+  rate     : Nat
+  channels : Nat
+  frameLen : Nat
+  deriving BEq
+
+/-- Check a source's audio can be copied and return its format, its packets
+and how many media samples they hold. Only the last packet may be shorter: it
+still decodes to a whole frame, and the edit list never plays past its end. -/
+def audioPackets (path : String) (a : AudioTrack) : IO (AudioFormat × Array AudioSample × Nat) := do
+  let fail {β} (why : String) : IO β := throw (IO.userError
+    s!"{path}: audio {why}; pass --no-audio to export without audio")
+  unless a.codec == "mp4a" && a.objectType == 2 do
+    fail s!"is {a.codec} (object type {a.objectType}); only AAC-LC can be copied"
+  unless a.timescale == a.sampleRate do
+    fail s!"timescale {a.timescale} is not its sample rate {a.sampleRate}"
+  let some s0 := a.samples[0]? | fail "track is empty"
+  let n := s0.dur
+  unless n > 0 && (a.samples.pop).all (·.dur == n) && a.samples.back!.dur ≤ n do
+    fail "packets have varying durations"
+  pure ({ rate := a.sampleRate, channels := a.channels, frameLen := n }, a.samples,
+        (a.samples.map (·.dur)).sum)
+
+/-- Round `x / d` to the nearest integer, halves up (`d > 0`). -/
+def roundDiv (x : Int) (d : Nat) : Int := Int.fdiv (2 * x + d) (2 * d)
+
+/-- The source audio media sample that plays with the source video sample at
+composition time `cts`, by both tracks' edit lists (movie timescale `mts`). -/
+def alignedSample (mts : Nat) (v : VideoTrack) (a : AudioTrack) (cts : Int) : Int :=
+  a.edit.mediaTime + roundDiv
+    (((cts - v.edit.mediaTime) * mts + ((v.edit.empty : Int) - a.edit.empty) * v.timescale) * a.timescale)
+    (v.timescale * mts)
+
 def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
   let t0 ← IO.monoMsNow
   let tl ← liftE tlPath (Json.parse (← IO.FS.readFile tlPath) >>= parseTimeline)
@@ -203,15 +257,38 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
   let mut fmt : Option (Nat × Nat × Nat × Nat × String) := none
   -- Each source file is read and indexed once, however many clips cut from it.
   let mut sources : Array (String × VideoTrack × Array Nat × VeriCut.Stream Pkt) := #[]
+  -- per source: its movie, and its copyable audio packets (`none`: no audio)
+  let mut movies : Array (Movie × Option (List APkt × Nat)) := #[]
+  let mut audioFmt : Option AudioFormat := none
+  let mut audioEntries : Array ByteArray := #[]
+  let mut audioClips : Array (AudioClip APkt) := #[]
   for c in tl do
-    let mut src := sources.find? (·.1 == c.path)
-    if src.isNone then
-      let (bytes, t) ← loadTrack c.path
+    let mut srcIdx := sources.findIdx? (·.1 == c.path)
+    if srcIdx.isNone then
+      let (bytes, mv) ← loadMovie c.path
+      let t := mv.video
       let ranks := displayRanks t
-      src := some (c.path, t, ranks, pktStream srcs.size t (ranks[·]!))
+      let si := srcs.size
+      let apkts ← match mv.audio with
+        | some a =>
+          if o.noAudio then pure none else
+          let (f, full, avail) ← audioPackets c.path a
+          if audioFmt.any (· != f) then
+            throw (IO.userError s!"{c.path}: audio sample rate, channels or packet length differs from the first clip")
+          audioFmt := some f
+          let e := match audioEntries.findIdx? (·.data == a.entries.data) with
+            | some i => i + 1
+            | none => audioEntries.size + 1
+          if e > audioEntries.size then audioEntries := audioEntries.push a.entries
+          pure (some (full.toList.map (fun x => ({ src := si, offset := x.offset, size := x.size, entry := e } : APkt)), avail))
+        | none => pure none
+      srcIdx := some sources.size
+      sources := sources.push (c.path, t, ranks, pktStream si t (ranks[·]!))
+      movies := movies.push (mv, apkts)
       srcs := srcs.push bytes
-      sources := sources.push src.get!
-    let some (_, t, ranks, s) := src | unreachable!
+    let some si := srcIdx | unreachable!
+    let (_, t, ranks, s) := sources[si]!
+    let (mv, apkts) := movies[si]!
     let dur := t.samples[0]!.dur
     if (t.samples.pop).any (·.dur != dur) then
       throw (IO.userError s!"{c.path}: variable frame rate is not supported")
@@ -222,6 +299,13 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
         throw (IO.userError s!"{c.path}: frame rate, size or codec differs from the first clip")
     loaded := loaded.push { clip := c, track := t, ranks }
     cuts := cuts.push (s, ← planClip c t s)
+    -- the clip's audio: the source sample that plays with its first frame
+    let srcStart := match mv.audio, (ranks.toList.idxOf? c.inF) with
+      | some a, some k => alignedSample mv.timescale t a t.samples[k]!.cts
+      | _, _ => 0
+    audioClips := audioClips.push
+      { source := (apkts.map (·.1)).getD [], avail := (apkts.map (·.2)).getD 0, srcStart,
+        ticks := (c.outF - c.inF) * dur }
   -- 2. the proven exporter (`exportTimeline_correct`), with ffmpeg as the encoder
   let (rendered, bufs) ← ((exportTimeline (m := ExportM) cuts.toList).run (o, loaded)).run srcs
   srcs := bufs
@@ -276,11 +360,22 @@ def doExport (tlPath outPath : String) (o : Opts) : IO Unit := do
       if seg.isCopy then copied := copied + out.length else encoded := encoded + seg.frames.length
     base := base + (c.outF - c.inF)
   let some (ts, dur, w, h, _) := fmt | throw (IO.userError "no clips")
-  writeFile outPath srcs { timescale := ts, dur, width := w, height := h, entries, samples }
+  -- 4. audio: the proven packet selection and edit list (`exportAudio_exact`, `exportAudio_synced`)
+  let audio := audioFmt.map fun af =>
+    let (pkts, edits) := exportAudioClips af.frameLen af.rate ts audioClips.toList
+    ({ timescale := af.rate, frameLen := af.frameLen, entries := audioEntries, edits,
+       samples := pkts.toArray.map fun p => { src := p.src, offset := p.offset, size := p.size,
+                                              sync := true, entry := p.entry, disp := 0 } } : AudioOut)
+  writeFile outPath srcs { timescale := ts, dur, width := w, height := h, entries, samples } audio
   let t1 ← IO.monoMsNow
+  let audioJson := match audio with
+    | some a => Json.mkObj [("packets", toJson a.samples.size), ("rate", toJson a.timescale),
+        ("samples", toJson ((a.edits.map fun | .media _ l => l | .empty l => l).sum)),
+        ("silent", toJson ((a.edits.map fun | .media _ _ => 0 | .empty l => l).sum))]
+    | none => Json.null
   IO.println <| Json.compress <| Json.mkObj [("output", toJson outPath), ("frames", toJson samples.size),
     ("copied", toJson copied), ("reencoded", toJson encoded), ("ms", toJson (t1 - t0)),
-    ("segments", Json.arr segsOut)]
+    ("audio", audioJson), ("segments", Json.arr segsOut)]
 
 def doPlan (tlPath : String) : IO Unit := do
   let tl ← liftE tlPath (Json.parse (← IO.FS.readFile tlPath) >>= parseTimeline)
@@ -292,7 +387,7 @@ def doPlan (tlPath : String) : IO Unit := do
   IO.println (Json.compress (Json.arr out))
 
 def usage : String :=
-  "usage: vericut probe <file> | plan <timeline.json> | export <timeline.json> <out.mp4> [--encoder NAME] [--encoder-args \"...\"] [--ffmpeg PATH] [--strict] [--paramsets stsd|inband]"
+  "usage: vericut probe <file> | plan <timeline.json> | export <timeline.json> <out.mp4> [--encoder NAME] [--encoder-args \"...\"] [--ffmpeg PATH] [--strict] [--paramsets stsd|inband] [--no-audio]"
 
 def main (args : List String) : IO UInt32 := do
   try

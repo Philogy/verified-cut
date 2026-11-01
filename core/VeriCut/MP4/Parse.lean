@@ -2,7 +2,7 @@ import VeriCut.MP4.Bytes
 import VeriCut.Spec.Stream
 
 /-!
-# MP4 / MOV demuxing: sample tables of the video track
+# MP4 / MOV demuxing: sample tables of the video and audio tracks
 
 Unverified implementation. `tests/` checks it against ffprobe on every sample
 file. Besides the index (`moov`), only the NAL unit headers of `stss` samples
@@ -63,6 +63,30 @@ structure Sample where
 
 def Sample.cts (s : Sample) : Int := s.dts + s.ctsOff
 
+/-- Where a track's media starts on the movie timeline: its first edit that
+shows media, after any leading empty edits. Later edits are ignored. -/
+structure TrackEdit where
+  /-- Empty time before the media, in movie timescale units. -/
+  empty     : Nat := 0
+  /-- The media time shown first, in media timescale units. -/
+  mediaTime : Int := 0
+  deriving Repr, Inhabited
+
+/-- The track's `elst` (no edit list: media from time 0). -/
+def parseEdit (b : ByteArray) (tk : Array Box) : Except String TrackEdit := do
+  let some edts := find? tk "edts" | return {}
+  let some elst := find? (← children b edts) "elst" | return {}
+  let v1 := u8 b elst.body == 1
+  let w := if v1 then 20 else 12
+  let mut empty := 0
+  for k in [0:u32 b (elst.body + 4)] do
+    let o := elst.body + 8 + w * k
+    let (dur, mt) := if v1 then (u64 b o, (u64 b (o + 8) : Int) - if u64 b (o + 8) ≥ 2 ^ 63 then 2 ^ 64 else 0)
+                     else (u32 b o, i32 b (o + 4))
+    if mt == -1 then empty := empty + dur
+    else return { empty, mediaTime := mt }
+  return { empty }
+
 structure VideoTrack where
   timescale : Nat
   width     : Nat   -- tkhd 16.16 fixed point, raw
@@ -71,6 +95,35 @@ structure VideoTrack where
   entries   : ByteArray
   codec     : String
   samples   : Array Sample
+  edit      : TrackEdit := {}
+  deriving Inhabited
+
+/-- One audio packet. -/
+structure AudioSample where
+  offset : Nat
+  size   : Nat
+  dur    : Nat
+  deriving Repr, Inhabited
+
+structure AudioTrack where
+  /-- Media timescale. For the audio we copy this is the sample rate. -/
+  timescale  : Nat
+  sampleRate : Nat
+  channels   : Nat
+  /-- The sample entries inside `stsd` (raw bytes, e.g. an `mp4a` box with its `esds`). -/
+  entries    : ByteArray
+  codec      : String
+  /-- MPEG-4 audio object type from the `esds` (2 = AAC-LC), 0 if none. -/
+  objectType : Nat
+  samples    : Array AudioSample
+  edit       : TrackEdit
+  deriving Inhabited
+
+/-- A file's movie timescale (`mvhd`), first video track and first audio track. -/
+structure Movie where
+  timescale : Nat
+  video     : VideoTrack
+  audio     : Option AudioTrack
   deriving Inhabited
 
 /-- NAL unit length size of an H.264 (`avcC`) or HEVC (`hvcC`) sample entry,
@@ -113,23 +166,8 @@ def expandRuns (b : ByteArray) (body : Nat) (val : Nat → Int) : Array Int := I
     for _ in [0:cnt] do out := out.push v
   return out
 
-def parseTrack (b : ByteArray) (trak : Box) : Except String (Option VideoTrack) := do
-  let tk ← children b trak
-  let mdia ← need tk "mdia" "trak"
-  let md ← children b mdia
-  let hdlr ← need md "hdlr" "mdia"
-  if fourcc b (hdlr.body + 8) != "vide" then return none
-  let mdhd ← need md "mdhd" "mdia"
-  let timescale := if u8 b mdhd.body == 1 then u32 b (mdhd.body + 20) else u32 b (mdhd.body + 12)
-  let tkhd ← need tk "tkhd" "trak"
-  let minf ← need md "minf" "mdia"
-  let stbl ← need (← children b minf) "stbl" "minf"
-  let st ← children b stbl
-  -- sample descriptions
-  let stsd ← need st "stsd" "stbl"
-  if u32 b (stsd.body + 4) != 1 then throw "source with several sample descriptions is not supported"
-  let entries := b.extract (stsd.body + 8) stsd.stop
-  let codec := fourcc b (stsd.body + 12)
+/-- Offsets, sizes and durations of every sample of a sample table. -/
+def sampleTable (b : ByteArray) (st : Array Box) : Except String (Array Nat × Array Nat × Array Int) := do
   -- sizes
   let stsz ← need st "stsz" "stbl"
   let n := u32 b (stsz.body + 8)
@@ -163,6 +201,27 @@ def parseTrack (b : ByteArray) (trak : Box) : Except String (Option VideoTrack) 
   let stts ← need st "stts" "stbl"
   let durs := expandRuns b stts.body fun o => (u32 b o : Int)
   if durs.size != n then throw "stts does not cover all samples"
+  return (offsets, sizes, durs)
+
+def parseTrack (b : ByteArray) (trak : Box) : Except String (Option VideoTrack) := do
+  let tk ← children b trak
+  let mdia ← need tk "mdia" "trak"
+  let md ← children b mdia
+  let hdlr ← need md "hdlr" "mdia"
+  if fourcc b (hdlr.body + 8) != "vide" then return none
+  let mdhd ← need md "mdhd" "mdia"
+  let timescale := if u8 b mdhd.body == 1 then u32 b (mdhd.body + 20) else u32 b (mdhd.body + 12)
+  let tkhd ← need tk "tkhd" "trak"
+  let minf ← need md "minf" "mdia"
+  let stbl ← need (← children b minf) "stbl" "minf"
+  let st ← children b stbl
+  -- sample descriptions
+  let stsd ← need st "stsd" "stbl"
+  if u32 b (stsd.body + 4) != 1 then throw "source with several sample descriptions is not supported"
+  let entries := b.extract (stsd.body + 8) stsd.stop
+  let codec := fourcc b (stsd.body + 12)
+  let (offsets, sizes, durs) ← sampleTable b st
+  let n := sizes.size
   let ctts := match find? st "ctts" with
     | some x =>
       let v1 := u8 b x.body == 1
@@ -188,7 +247,77 @@ def parseTrack (b : ByteArray) (trak : Box) : Except String (Option VideoTrack) 
                               sync := syncs[i]! && fmt.all fun (ls, idr) => hasIdr b ls idr offsets[i]! sizes[i]! }
     dts := dts + d
   return some { timescale, width := u32 b (tkhd.stop - 8), height := u32 b (tkhd.stop - 4),
-                entries, codec, samples }
+                entries, codec, samples, edit := ← parseEdit b tk }
+
+/-- A descriptor of an `esds` box at `o`: its tag, and where its payload starts and ends. -/
+def descriptor (b : ByteArray) (o : Nat) : Nat × Nat × Nat := Id.run do
+  let mut len := 0
+  let mut p := o + 1
+  for _ in [0:4] do
+    let x := u8 b p
+    len := len * 128 + x % 128
+    p := p + 1
+    if x < 128 then break
+  return (u8 b o, p, p + len)
+
+/-- The MPEG-4 audio object type in an `esds` box (2 = AAC-LC), 0 if not found. -/
+def esdsObjectType (b : ByteArray) (esds : Box) : Nat := Id.run do
+  let (t3, p3, _) := descriptor b (esds.body + 4)
+  if t3 != 3 then return 0
+  let flags := u8 b (p3 + 2)
+  let mut p := p3 + 3
+  if flags &&& 0x80 != 0 then p := p + 2
+  if flags &&& 0x40 != 0 then p := p + 1 + u8 b p
+  if flags &&& 0x20 != 0 then p := p + 2
+  let (t4, p4, _) := descriptor b p
+  if t4 != 4 then return 0
+  let (t5, p5, _) := descriptor b (p4 + 13)
+  if t5 != 5 then return 0
+  let aot := u8 b p5 / 8
+  return if aot == 31 then 32 + (u8 b p5 % 8) * 8 + u8 b (p5 + 1) / 32 else aot
+
+def parseAudioTrack (b : ByteArray) (trak : Box) : Except String (Option AudioTrack) := do
+  let tk ← children b trak
+  let mdia ← need tk "mdia" "trak"
+  let md ← children b mdia
+  let hdlr ← need md "hdlr" "mdia"
+  if fourcc b (hdlr.body + 8) != "soun" then return none
+  let mdhd ← need md "mdhd" "mdia"
+  let timescale := if u8 b mdhd.body == 1 then u32 b (mdhd.body + 20) else u32 b (mdhd.body + 12)
+  let minf ← need md "minf" "mdia"
+  let st ← children b (← need (← children b minf) "stbl" "minf")
+  let stsd ← need st "stsd" "stbl"
+  if u32 b (stsd.body + 4) != 1 then throw "audio with several sample descriptions is not supported"
+  let e := stsd.body + 8
+  let codec := fourcc b (e + 4)
+  -- QuickTime sound description version 1 has 16 more bytes before the child boxes.
+  let ver := u16 b (e + 16)
+  let kids := (children b ⟨codec, e, e + 36 + (if ver == 1 then 16 else 0), e + u32 b e⟩).toOption.getD #[]
+  let esds := (find? kids "esds").orElse fun _ =>
+    (find? kids "wave").bind fun w => (children b w).toOption.bind (find? · "esds")
+  let (offsets, sizes, durs) ← sampleTable b st
+  return some {
+    timescale, sampleRate := u32 b (e + 32) / 65536, channels := u16 b (e + 24),
+    entries := b.extract e stsd.stop, codec,
+    objectType := (esds.map (esdsObjectType b)).getD 0,
+    samples := (Array.range sizes.size).map fun i => ⟨offsets[i]!, sizes[i]!, durs[i]!.toNat⟩,
+    edit := ← parseEdit b tk }
+
+/-- The movie timescale, first video track and first audio track of a file. -/
+def parseMovie (b : ByteArray) : Except String Movie := do
+  let top ← parseBoxes b 0 b.size
+  let moov ← need top "moov" "file"
+  let kids ← children b moov
+  let mvhd ← need kids "mvhd" "moov"
+  let timescale := if u8 b mvhd.body == 1 then u32 b (mvhd.body + 20) else u32 b (mvhd.body + 12)
+  let mut video := none
+  let mut audio := none
+  for t in kids do
+    if t.type == "trak" then
+      if video.isNone then video ← parseTrack b t
+      if audio.isNone then audio ← parseAudioTrack b t
+  let some v := video | throw "no video track"
+  return { timescale, video := v, audio }
 
 /-- The first video track of a file. -/
 def parseVideo (b : ByteArray) : Except String VideoTrack := do

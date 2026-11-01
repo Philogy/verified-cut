@@ -1,7 +1,9 @@
 # Verified Cut
 
 A cuts-only video editor whose exporter is **proven** (Lean 4) to output exactly
-the frames you selected, while re-encoding only the frames it has to.
+the frames you selected, while re-encoding only the frames it has to. The
+source's AAC audio is copied, never re-encoded, and proven to play exactly the
+samples under each cut, in sync with the video.
 
 Most editors re-encode every frame on export. A cut only *needs* re-encoding
 where it breaks a frame's dependencies: from a mid-GOP cut point up to the next
@@ -32,7 +34,7 @@ CLI:
 ```sh
 vericut probe clip.mp4                       # frame table (sizes, timestamps, keyframes) as JSON
 vericut plan timeline.json                   # which frames will be copied / re-encoded
-vericut export timeline.json out.mp4 --encoder h264_videotoolbox
+vericut export timeline.json out.mp4 --encoder h264_videotoolbox   # --no-audio drops the audio
 # timeline.json: {"clips": [{"path": "a.mp4", "in": 100, "out": 700}]}   display frames, half-open
 ```
 
@@ -60,6 +62,16 @@ faithful even with B-frames and long-term references.
 | `plan_valid`, `plan_covers`, `plan_copy_copyable` | The implemented planner emits only valid copy segments, covers exactly the wanted frames, and copies only copyable frames. |
 | `exportTimeline_correct` | The export loop the CLI actually runs (`Impl/Export.lean`, generic over a `MonadEncode` effect, run in `IO` with ffmpeg), run on the planner's plans with *any* encoder function meeting the per-job contract, decodes to the requested pictures of every clip in timeline order. |
 | `toStream_wellFormed` | The MP4 bridge stream is well-formed when sample 0 is sync (which the CLI checks). |
+| `exportAudio_exact` | For any audio codec whose packets decode from their own bytes and the previous packet's (AAC-LC's MDCT overlap), the copied audio packets, played through the written edit list, give exactly each clip's source samples (silence where the source has none). No approximation. |
+| `exportAudio_synced` | Every clip's audio starts within half a sample of its video on the output clock, so rounding never accumulates; for the end of the timeline, audio and video lengths agree to half a sample. |
+| `exportAudio_aligned` | Within a clip, output sample `j` is source sample `srcStart + j`, where `srcStart` is the source sample playing with the clip's first frame. |
+
+**Audio** (`Spec/Audio.lean`, proofs `Proofs/Audio.lean`): each cut copies the AAC
+packets covering it plus one packet before (the pre-roll, which the decoder needs
+for the MDCT overlap and which is never presented), and one edit-list entry per cut
+says which media samples to play. Cut lengths are rounded once, on the output video
+clock (`sampleAt`), so 100 cuts drift no more than one. Why this scheme, and how it
+compares to other tools: `research/audio-cuts.md`.
 
 `VeriCut/Examples.lean` instantiates the hypotheses on concrete streams,
 shows the spec *rejects* a naive cut (`¬ CopySet gop2 [1,2,3,4]`), and has
@@ -85,6 +97,14 @@ Read these before trusting the theorems:
   picture; the parser reads the NAL headers to check. Open-GOP I-frames (which
   x264/ffmpeg list in `stss`) are not sync. For other codecs (ProRes) `stss` is
   trusted as is. The ffmpeg tests check it on every sample.
+- **Audio codec assumption** (`AudioCodec` in `Spec/Audio.lean`): an AAC-LC packet
+  decodes to 1024 samples that depend only on its own bytes and the previous
+  packet's. True of the MDCT overlap; not of PNS noise bands, whose noise is random
+  by design (ffmpeg's encoder enables PNS by default, so the tests turn it off).
+  The player is trusted to honour a multi-entry edit list: AVFoundation/QuickTime
+  does, sample-exactly (tested); ffmpeg doesn't (see limits).
+- **Audio alignment** (`alignedSample` in `Main.lean`, unverified, tested): which
+  source audio sample plays with a clip's first frame, from both tracks' edit lists.
 - **Unverified, tested code**: MP4 parsing (`MP4/Parse.lean`, differential-tested
   against ffprobe), MP4 writing (`MP4/Write.lean`), and in the CLI (`Main.lean`) the
   `IO` encode instance and the mux pass that turns the exporter's packet stream into
@@ -93,7 +113,7 @@ Read these before trusting the theorems:
 
 ## Tests
 
-`python3 tests/test_vericut.py` (16 tests, ~20 s) uses ffmpeg as the oracle:
+`python3 tests/test_vericut.py` (21 tests, ~20 s) uses ffmpeg as the oracle:
 
 - probe agrees with ffprobe on sizes, offsets, keyframes and display order of every sample,
   and its sync flags with the IDR NAL units ffmpeg's `trace_headers` sees;
@@ -104,6 +124,11 @@ Read these before trusting the theorems:
   every re-encoded frame above 35 dB PSNR;
 - open GOP (generated `gop24_open.mp4`): cuts at and across non-IDR I-frames;
 - multi-clip timelines; rejection of bad ranges, mismatched clips, `--strict`;
+- audio (`AudioTests`; a generated H.264 + AAC chirp, Big Buck Bunny, a timeline with a
+  clip without audio): each cut's decoded samples equal the source's, sample for sample,
+  at the sample nearest the clip's first frame by ffprobe's timestamps (edit list applied
+  by an independent parser); audio length equals video length to half a sample; the same
+  through AVFoundation (macOS, `tests/avpcm.swift`) to ±1 LSB; `--no-audio`;
 - proof audit: no `sorry`, no extra axioms.
 
 A mutation check was run while building this: making the bridge claim every
@@ -111,7 +136,23 @@ frame is a keyframe causes the smart-cut tests to fail.
 
 ## Known limits / next steps
 
-- **Video track only**: audio is dropped. Next: AAC with priming and edit lists.
+- **Audio is AAC-LC in MP4 only** (one track, the first; one sample rate, channel count and
+  packet length across the timeline). Other audio fails the export with a hint to pass
+  `--no-audio`. Clips from sources without audio are silent.
+- **ffmpeg-based players** (ffplay, VLC, ffmpeg itself) don't trim inside a packet at the
+  2nd and later edits of an edit list: around each splice they play up to one packet
+  (≈21 ms at 48 kHz) too much. Not cumulative: each edit restarts on time. QuickTime and
+  AVFoundation play it exactly.
+- **Implicit priming**: AVFoundation assumes 2112 priming samples for sources with no
+  `roll` sample group (Big Buck Bunny, the NASA stock clips), but ffmpeg and the ISO edit
+  list don't. vericut follows the edit list; our output carries a `roll` group, so in
+  QuickTime it plays 2112 samples (44 ms at 48 kHz) later against the video than QuickTime
+  plays the source. Which is right depends on the encoder that made the source.
+- A cut that is not the timeline's first can't play its source's first audio packet (it has
+  no packet before it to pre-roll from): it plays up to 1024 samples of silence instead.
+  Only matters for clips from the very start of a source whose edit list starts at media
+  time 0; ffmpeg-made files start at 1024 and aren't affected.
+- Audio composition offsets (`ctts` on an audio track, e.g. `bear_bframes.mp4`) are ignored.
 - **Display order and timestamps** are produced by the muxer and tested, not yet
   proven. Next theorem: output pts strictly increasing and gap-free.
 - **MP4 parse/serialize** round-trip theorem not yet stated. Today they're
