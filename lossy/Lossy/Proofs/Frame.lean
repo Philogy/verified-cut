@@ -86,16 +86,16 @@ theorem flatMap_len8 {ser : α → List Bool} :
     have := flatMap_len8 vs fun w hw => h w (by simp [hw])
     omega
 
-theorem Parses8.many {p : Reader α} {ser : α → List Bool} :
-    ∀ (vs : List α), (∀ v ∈ vs, Parses8 p v (ser v) ∧ (ser v).length % 8 = 0) →
-      Parses8 (Reader.many p vs.length) vs (vs.flatMap ser)
+theorem Parses8.many {p : Reader α} {val : β → α} {ser : β → List Bool} :
+    ∀ (fs : List β), (∀ f ∈ fs, Parses8 p (val f) (ser f) ∧ (ser f).length % 8 = 0) →
+      Parses8 (Reader.many p fs.length) (fs.map val) (fs.flatMap ser)
   | [], _ => Parses.parses8 (Parses.pure [])
-  | v :: vs, h => by
-    have hrest := Parses8.many vs fun w hw => h w (by simp [hw])
-    have := Parses8.bind (h v (by simp)).1 (h v (by simp)).2 (f := fun v => do
-        let vs ← Reader.many p vs.length; Pure.pure (v :: vs))
-      (Parses8.bind hrest (flatMap_len8 vs fun w hw => (h w (by simp [hw])).2)
-        (Parses.parses8 (Parses.pure (v :: vs))))
+  | f :: fs, h => by
+    have hrest := Parses8.many fs fun g hg => h g (by simp [hg])
+    have := Parses8.bind (h f (by simp)).1 (h f (by simp)).2 (f := fun v => do
+        let vs ← Reader.many p fs.length; Pure.pure (v :: vs))
+      (Parses8.bind hrest (flatMap_len8 fs fun g hg => (h g (by simp [hg])).2)
+        (Parses.parses8 (Parses.pure (val f :: fs.map val))))
     simpa [Reader.many] using this
 
 theorem length_frameBits (bps : Nat) (fr : Frame) : (frameBits bps fr).length % 8 = 0 := by
