@@ -75,3 +75,34 @@ c58d6c2,2026-11-01T14:41:09,"bit writer: UInt64 buffer, one-write Rice, UInt32 C
 27cd261,2026-11-01T15:03:30,STREAMINFO MD5,forest,vericut,0,0.333,0.238,68,3011386,0.5173
 27cd261,2026-11-01T15:03:34,STREAMINFO MD5,forest,vericut,5,0.520,0.154,67,1085094,0.1864
 27cd261,2026-11-01T15:03:40,STREAMINFO MD5,forest,vericut,8,0.972,0.161,67,1073203,0.1844
+ref,2026-11-01T15:23:06,reference baseline,piano,flac,1,0.043,0.039,2,4340297,0.4054
+ref,2026-11-01T15:23:07,reference baseline,piano,flac,2,0.051,0.039,2,4328640,0.4043
+ref,2026-11-01T15:23:07,reference baseline,piano,flac,3,0.049,0.046,2,4055157,0.3787
+ref,2026-11-01T15:23:08,reference baseline,piano,flac,4,0.051,0.044,2,4011673,0.3747
+ref,2026-11-01T15:23:08,reference baseline,piano,flac,6,0.092,0.043,2,3989536,0.3726
+ref,2026-11-01T15:23:09,reference baseline,piano,flac,7,0.101,0.049,2,3931081,0.3672
+ref,2026-11-01T15:23:09,reference baseline,forest,flac,1,0.025,0.022,2,1524078,0.2618
+ref,2026-11-01T15:23:10,reference baseline,forest,flac,2,0.029,0.022,2,1524078,0.2618
+ref,2026-11-01T15:23:10,reference baseline,forest,flac,3,0.030,0.029,2,2281141,0.3919
+ref,2026-11-01T15:23:10,reference baseline,forest,flac,4,0.029,0.023,3,1093508,0.1878
+ref,2026-11-01T15:23:10,reference baseline,forest,flac,6,0.046,0.022,3,1092654,0.1877
+ref,2026-11-01T15:23:11,reference baseline,forest,flac,7,0.046,0.024,2,1082004,0.1859
+95565b4,2026-11-01T15:23:26,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,0,0.685,0.333,94,4329538,0.4044
+95565b4,2026-11-01T15:23:32,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,1,0.785,0.337,92,4320385,0.4035
+95565b4,2026-11-01T15:23:37,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,2,0.764,0.315,92,4320385,0.4035
+95565b4,2026-11-01T15:23:45,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,3,1.078,0.319,96,4041199,0.3774
+95565b4,2026-11-01T15:23:52,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,4,1.151,0.342,95,3989227,0.3726
+95565b4,2026-11-01T15:24:00,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,5,1.160,0.329,95,3989000,0.3726
+95565b4,2026-11-01T15:24:08,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,6,1.166,0.323,94,3988999,0.3726
+95565b4,2026-11-01T15:24:16,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,7,1.239,0.346,94,3930436,0.3671
+95565b4,2026-11-01T15:24:29,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),piano,vericut,8,2.296,0.343,95,3923398,0.3664
+95565b4,2026-11-01T15:24:32,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,0,0.322,0.183,67,3011386,0.5173
+95565b4,2026-11-01T15:24:34,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,1,0.334,0.126,66,1515732,0.2604
+95565b4,2026-11-01T15:24:37,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,2,0.350,0.127,66,1515732,0.2604
+95565b4,2026-11-01T15:24:40,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,3,0.494,0.128,66,1139642,0.1958
+95565b4,2026-11-01T15:24:44,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,4,0.512,0.136,66,1085105,0.1864
+95565b4,2026-11-01T15:24:47,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,5,0.509,0.125,66,1085094,0.1864
+95565b4,2026-11-01T15:24:50,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,6,0.514,0.127,66,1085103,0.1864
+95565b4,2026-11-01T15:24:54,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,7,0.555,0.130,66,1074813,0.1846
+95565b4,2026-11-01T15:25:00,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),forest,vericut,8,0.991,0.130,66,1073203,0.1844
+95565b4,2026-11-01T15:26:14,spec restored; fast path in Flac/Fast/ with equivalence proofs (same bytes as e0ed3ec),podcast,vericut,5,52.706,11.324,3534,131356914,0.2029

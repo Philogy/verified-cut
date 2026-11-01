@@ -2,7 +2,7 @@
 """Append FLAC encode/decode benchmark rows to bench/flac-optimization.csv.
 
     bench/flac_bench.py DESCRIPTION [--tools vericut,flac,ffmpeg] [--clips piano,forest]
-                        [--levels 0,5,8] [--runs 5] [--bin PATH]
+                        [--levels 0,...,8] [--runs 5] [--bin PATH]
 
 Each (clip, tool, level) is run `--runs` times for encode and for decode; wall
 times are the median, peak RSS the max over the runs (from wait4). Decode
@@ -75,11 +75,12 @@ def main():
     ap.add_argument("description")
     ap.add_argument("--tools", default="vericut")
     ap.add_argument("--clips", default="piano,forest")
-    ap.add_argument("--levels", default="0,5,8")
+    ap.add_argument("--levels", default="0,1,2,3,4,5,6,7,8")
     ap.add_argument("--runs", type=int, default=5)
     ap.add_argument("--timeout", type=float, default=900)
     ap.add_argument("--bin", default=os.path.join(ROOT, "core/.lake/build/bin/vericut"))
     ap.add_argument("--commit", default=None)
+    ap.add_argument("--all-podcast-levels", action="store_true")
     a = ap.parse_args()
     commit = a.commit or subprocess.run(["git", "-C", ROOT, "rev-parse", "--short", "HEAD"],
                                         capture_output=True, text=True, check=True).stdout.strip()
@@ -92,7 +93,11 @@ def main():
             src = os.path.join(AUDIO, CLIPS[clip])
             wav_bytes = os.path.getsize(src)
             for tool in a.tools.split(","):
-                for level in [int(l) for l in a.levels.split(",")]:
+                # the podcast only at -5 (one run takes minutes)
+                levels = [int(l) for l in a.levels.split(",")]
+                if clip == "podcast" and tool == "vericut" and not a.all_podcast_levels:
+                    levels = [5]
+                for level in levels:
                     fo = os.path.join(TMP, f"{clip}-{tool}-{level}.flac")
                     wo = os.path.join(TMP, f"{clip}-{tool}-{level}.wav")
                     enc, dec = cmds(tool, level, src, fo, wo, a.bin)

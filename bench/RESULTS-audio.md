@@ -103,3 +103,56 @@ decoder already implemented LPC. Float literals had to become top-level constant
 
 Sizes now beat libFLAC slightly at -5 and -8 on both clips (piano -5 3,989,002 vs 3,997,227
 bytes; forest -8 1,073,205 vs 1,081,272), at a cost in speed: piano -5 0.76 s -> 1.29 s.
+
+### 7. Int64 residual, Rice estimate (`8b2fbe4`): piano -5 1.29 s -> 1.07 s
+
+Residuals in `Int64` when nothing can overflow, with an `Int` fallback (proved equal); Rice
+parameter from libFLAC's estimate, then +-1; zigzag sums in `UInt64`. Dead end on the way: the
+first `Int64` version was 25 % *slower*. The guard compared against the literal `2 ^ 36`, and a
+`Nat` literal of `2 ^ 32` or more compiles to `lean_cstr_to_nat("68719476736")`, parsed from a
+string on every iteration. Moving it into a `@[noinline]` constant fixed it.
+
+### 8. MD5 (`27cd261`), fused Rice reader (`e0ed3ec`)
+
+STREAMINFO MD5 per RFC 1321 in `UInt32`, a chunk at a time; it matches libFLAC's digest and
+costs about 1 %. `flac -t` no longer warns. The decoder reads a Rice partition in one loop that
+allocates nothing per value: piano decode 0.41 s -> 0.31 s.
+
+### 9. Spec restored, fast path separate (`95565b4`): same bytes, same speed
+
+Steps 2-8 had edited the spec definitions (`Flac.encode`, `Flac.decode` and what they use) in
+place. By request, the spec is back at `8a7a9cd` exactly (the simple `Nat` writer, fixed
+predictors only, `Stream` then `Stream.samples`), and every speedup lives in `Flac/Fast/`:
+
+* `decodeFast`, with `decodeFast_eq : decodeFast d = decode d` for every `d`;
+* `encodeFast` (LPC, Rice estimate, `Int64` prediction, the 64-bit writer, streaming frames, MD5),
+  with `flac_roundTrip_fast : decode (encodeFast st x) = .ok x` and `export_correct_fast`, stated
+  over the spec's `decode` and with the same hypotheses as `flac_roundTrip`/`export_correct`.
+  No extra hypotheses: bounds the fast code relies on (`Int64` sums) are checked at run time,
+  with a fallback to the `Int` code, and that fallback is part of what is proved.
+
+The CLI runs the fast path. Output is byte-identical to `e0ed3ec` on every clip at levels 0, 5
+and 8, and timings match. From here on every commit is benchmarked at all levels 0-8 on piano
+and forest against libFLAC 0-8 (for Pareto plots), and on the podcast at -5.
+
+Where we stand against libFLAC (piano / forest, median wall time):
+
+| level | vericut encode s | flac encode s | vericut bytes | flac bytes |
+|---|---|---|---|---|
+| -0 | 0.69 / 0.32 | 0.04 / 0.03 | 4,329,538 / 3,011,386 | 4,337,855 / 3,019,766 |
+| -5 | 1.16 / 0.51 | 0.07 / 0.03 | 3,989,000 / 1,085,094 | 3,997,227 / 1,093,498 |
+| -8 | 2.30 / 0.99 | 0.14 / 0.07 | 3,923,398 / 1,073,203 | 3,927,037 / 1,081,272 |
+
+Decode: piano 0.33 s vs 0.04 s. Podcast -5: encode 52.7 s vs 3.3 s, decode 11.3 s vs 1.8 s, peak
+RSS 3.5 GB vs 3 MB, 131,356,914 vs 131,359,912 bytes.
+
+What remains and why:
+* ~10-17x slower to encode, ~8x to decode. libFLAC is hand-tuned C with SIMD for
+  autocorrelation, residuals and Rice sums. We have no SIMD; samples are `Array Int`, one boxed
+  slot (8 bytes) per sample with a scalar/bignum check on every access, and each analysis step
+  makes a fresh array. Parsing goes through a `Parser` monad of closures.
+* Memory: `Pcm.samples : Array Int` appears in the theorem statements, so the whole input is
+  held as `Array Int` (1.3 GB for the podcast), next to the WAV bytes and the output. libFLAC
+  streams. Closing this needs a streaming encoder that is proved equal frame by frame.
+* Size: we're within 0.3 % of libFLAC, and slightly smaller at every level shown, because we
+  keep the cheapest of all candidates per subframe while libFLAC estimates.
