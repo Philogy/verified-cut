@@ -120,7 +120,7 @@ def dot (coefs s : Array Int) (i : Nat) : Nat → Int → Int
 
 /-- The prediction for sample `i` from the samples before it. -/
 def predict (coefs : Array Int) (shift : Nat) (s : Array Int) (i : Nat) : Int :=
-  dot coefs s i coefs.size 0 / 2 ^ shift
+  dot coefs s i coefs.size 0 >>> shift
 
 /-- Undo prediction: append `r + prediction` for each residual `r`. -/
 def restore (coefs : Array Int) (shift : Nat) (warmup residual : Array Int) : Array Int :=

@@ -35,7 +35,7 @@ theorem bestOrder_ok (hw : warmup ≤ n) :
   simp only [List.mem_range] at hp
   split
   · rename_i hok
-    simp only [Bool.and_eq_true, decide_eq_true_eq, Nat.shiftRight_eq_div_pow] at hok
+    simp only [orderFits, Bool.and_eq_true, decide_eq_true_eq, Nat.shiftRight_eq_div_pow] at hok
     split
     · exact ⟨by omega, hok.1, hok.2⟩
     · exact hb
@@ -147,29 +147,25 @@ theorem planBody_spec (st : Settings) (bits : Nat) (s : Array Int)
     (planBody st bits s).1.samples s.size = s ∧ (planBody st bits s).1.WF bits s.size := by
   have verbatim : (Body.verbatim s).samples s.size = s ∧ (Body.verbatim s).WF bits s.size :=
     ⟨rfl, rfl, hr⟩
+  have hk4 : bestFixedOrder st.maxFixedOrder s.size s ≤ 4 := by
+    unfold bestFixedOrder
+    exact foldl_inv (· ≤ 4) _ _ _ (by omega) (fun b k hk hb => by
+      simp only [List.mem_range] at hk; split <;> omega)
   dsimp only [planBody]
+  generalize bestFixedOrder st.maxFixedOrder s.size s = k at hk4
   split
-  · exact verbatim
-  · rename_i first rest hscored
-    generalize hbest : rest.foldl _ first = best
-    have hmem : best ∈ first :: rest := by
-      rw [← hbest]
-      exact foldl_inv (· ∈ first :: rest) _ _ _ (by simp)
-        (fun b c hc hb => by split <;> simp_all) 
-    rw [← hscored, List.mem_map] at hmem
-    obtain ⟨k, hk, rfl⟩ := hmem
-    simp only [List.mem_filter, List.mem_range, decide_eq_true_eq] at hk
-    have hk4 : k ≤ 4 := by omega
+  · rename_i hkn
     have hsize : (s.extract 0 k).size = k := by simp [Array.size_extract]; omega
     obtain ⟨hvals, hwf⟩ := planResidual_spec (min st.maxPartitionOrder 15) s.size k
-      (residualOf (fixedCoefs k) 0 s k) (by omega) hk.2 (size_residualOf _ _ _ _)
+      (residualOf (fixedCoefs k) 0 s k) (by omega) hkn (size_residualOf _ _ _ _)
     split
     · constructor
       · simp only [Body.samples, hsize, hvals]
-        exact restore_residualOf _ _ _ _ (by rw [size_fixedCoefs k hk4]; exact Nat.le_refl _) hk.2
+        exact restore_residualOf _ _ _ _ (by rw [size_fixedCoefs k hk4]; exact Nat.le_refl _) hkn
       · simp only [Body.WF, hsize]
-        exact ⟨hk4, hk.2, fun v hv => hr v (mem_extract hv), hwf⟩
+        exact ⟨hk4, hkn, fun v hv => hr v (mem_extract hv), hwf⟩
     · exact verbatim
+  · exact verbatim
 
 theorem planSubframe_spec (st : Settings) (bits : Nat) (s : Array Int) (hb : 0 < bits) (hn : 0 < s.size)
     (hr : ∀ v ∈ s, InRange bits v) :
@@ -188,12 +184,9 @@ theorem planSubframe_spec (st : Settings) (bits : Nat) (s : Array Int) (hb : 0 <
   · generalize hw : min (trailingZeros _) (bits - 1) = w
     split
     · rename_i hdiv
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hdiv
+      obtain ⟨h0, hdiv⟩ := hdiv
       rw [Array.all_eq_true] at hdiv
-      by_cases h0 : w = 0
-      · subst h0
-        simp only [if_true, Nat.sub_zero]
-        obtain ⟨hs, hwf⟩ := planBody_spec st bits s hr
-        exact ⟨by simpa [Subframe.samples] using hs, hb, hwf⟩
       · simp only [h0, if_false]
         have hdiv' : ∀ v ∈ s, v % 2 ^ w = 0 := by
           intro v hv

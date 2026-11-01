@@ -53,12 +53,34 @@ def planPartition (r : Array Int) (n warmup p j : Nat) : Partition :=
   let ab := partBounds n warmup p j
   { coding := .rice (bestRice (zigzagSum r ab.1 ab.2) (ab.2 - ab.1)).1, values := r.extract ab.1 ab.2 }
 
+/-- Whether `2 ^ p` partitions fit a block of `n` after `warmup` samples. -/
+def orderFits (n warmup p : Nat) : Bool := n % 2 ^ p = 0 && warmup ≤ n >>> p
+
+/-- The highest order up to `maxOrder` that fits (fitting is closed downwards). -/
+def finestOrder (maxOrder n warmup : Nat) : Nat :=
+  (List.range (maxOrder + 1)).foldl (fun b p => if orderFits n warmup p then p else b) 0
+
+/-- Zigzag sums of the partitions at every order up to `fine`, finest first merged pairwise:
+`sums[p][j]` is partition `j` of `2 ^ p`. -/
+def partitionSums (r : Array Int) (n warmup fine : Nat) : Array (Array Nat) := Id.run do
+  let leaves := (Array.range (2 ^ fine)).map fun j =>
+    let ab := partBounds n warmup fine j
+    zigzagSum r ab.1 ab.2
+  let mut levels := #[leaves]
+  let mut cur := leaves
+  for _ in [0:fine] do
+    cur := (Array.range (cur.size / 2)).map fun j => cur[2 * j]! + cur[2 * j + 1]!
+    levels := levels.push cur
+  return levels.reverse
+
 /-- The partition order with the least estimated size, among those that divide the block. -/
 def bestOrder (maxOrder n warmup : Nat) (r : Array Int) : Nat × Nat :=
+  let fine := finestOrder maxOrder n warmup
+  let sums := partitionSums r n warmup fine
   let cost p := (List.range (2 ^ p)).foldl (init := 6) fun c j =>
     let ab := partBounds n warmup p j
-    c + 4 + (bestRice (zigzagSum r ab.1 ab.2) (ab.2 - ab.1)).2
-  let ok p := n % 2 ^ p = 0 && warmup ≤ n >>> p
+    c + 4 + (bestRice (sums[p]!)[j]! (ab.2 - ab.1)).2
+  let ok p := orderFits n warmup p
   (List.range (maxOrder + 1)).foldl (init := (0, cost 0)) fun best p =>
     if ok p then let c := cost p; if c < best.2 then (p, c) else best else best
 
@@ -72,20 +94,50 @@ def planResidual (maxOrder n warmup : Nat) (r : Array Int) : Residual × Nat :=
 def residualOf (coefs : Array Int) (shift : Nat) (s : Array Int) (order : Nat) : Array Int :=
   .ofFn (n := s.size - order) fun i => s[order + i.1]! - predict coefs shift s (order + i.1)
 
-def absSum (r : Array Int) : Nat := r.foldl (· + ·.natAbs) 0
+@[inline] def abs64 (v : Int64) : Int64 := if v < 0 then -v else v
+
+/-- From sample `i` on: `p1` is the previous sample, `d1 d2 d3` its residuals at orders 1 to 3,
+`a0 … a4` the sums so far. -/
+def fixedSumsLoop (s : Array Int) (i : Nat) (p1 d1 d2 d3 a0 a1 a2 a3 a4 : Int64) : Array Nat :=
+  if h : i < s.size then
+    let v := s[i].toInt64
+    let e1 := v - p1
+    let e2 := e1 - d1
+    let e3 := e2 - d2
+    let e4 := e3 - d3
+    fixedSumsLoop s (i + 1) v e1 e2 e3 (a0 + abs64 v) (a1 + abs64 e1) (a2 + abs64 e2) (a3 + abs64 e3)
+      (a4 + abs64 e4)
+  else #[a0, a1, a2, a3, a4].map (·.toInt.toNat)
+termination_by s.size - i
+
+/-- Sums of `|residual|` of the fixed predictors of orders 0 to 4, from sample 4 on, in one pass.
+Only used to choose the order, so `Int64` wrapping on absurd inputs costs size, not correctness. -/
+def fixedSums (s : Array Int) : Array Nat :=
+  if s.size < 5 then #[0, 0, 0, 0, 0] else
+  let x0 := s[0]!.toInt64
+  let x1 := s[1]!.toInt64
+  let x2 := s[2]!.toInt64
+  let x3 := s[3]!.toInt64
+  let d1 := x3 - x2
+  let d2 := d1 - (x2 - x1)
+  let d3 := d2 - ((x2 - x1) - (x1 - x0))
+  fixedSumsLoop s 4 x3 d1 d2 d3 0 0 0 0 0
+
+/-- The fixed order with the least `|residual|` sum, at most `maxOrder` and `n`. -/
+def bestFixedOrder (maxOrder n : Nat) (s : Array Int) : Nat :=
+  let sums := fixedSums s
+  (List.range (min maxOrder 4 + 1)).foldl (init := 0) fun best k =>
+    if k ≤ n && sums[k]! < sums[best]! then k else best
 
 def planBody (st : Settings) (bits : Nat) (s : Array Int) : Body × Nat :=
   let n := s.size
   let verbatim := (Body.verbatim s, n * bits)
-  let orders := (List.range (min st.maxFixedOrder 4 + 1)).filter (· ≤ n)
-  let scored := orders.map fun k => let r := residualOf (fixedCoefs k) 0 s k; (k, r, absSum r)
-  match scored with
-  | [] => verbatim
-  | first :: rest =>
-    let best := rest.foldl (init := first) fun best c => if c.2.2 < best.2.2 then c else best
-    let res := planResidual (min st.maxPartitionOrder 15) n best.1 best.2.1
-    let fixed := (Body.fixed (s.extract 0 best.1) res.1, best.1 * bits + res.2)
+  let k := bestFixedOrder st.maxFixedOrder n s
+  if k ≤ n then
+    let res := planResidual (min st.maxPartitionOrder 15) n k (residualOf (fixedCoefs k) 0 s k)
+    let fixed := (Body.fixed (s.extract 0 k) res.1, k * bits + res.2)
     if fixed.2 < verbatim.2 then fixed else verbatim
+  else verbatim
 
 def trailingZeros (g : Nat) : Nat :=
   if g = 0 then 0 else go g 0 64
@@ -100,7 +152,7 @@ def planSubframe (st : Settings) (bits : Nat) (s : Array Int) : Subframe × Nat 
   else
     let w := min (trailingZeros (s.foldl (· ||| ·.natAbs) 0)) (bits - 1)
     -- Checked rather than proved: the round trip only needs the samples to be multiples.
-    let wasted := if s.all (· % 2 ^ w == 0) then w else 0
+    let wasted := if w ≠ 0 && (let m : Int := 2 ^ w; s.all (· % m == 0)) then w else 0
     let body := planBody st (bits - wasted) (if wasted = 0 then s else s.map (· / 2 ^ wasted))
     (⟨wasted, body.1⟩, body.2 + wasted)
 
