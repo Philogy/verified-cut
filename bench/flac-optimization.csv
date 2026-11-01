@@ -124,3 +124,22 @@ ref,2026-11-01T15:23:11,reference baseline,forest,flac,7,0.046,0.024,2,1082004,0
 25822b5,2026-11-01T15:40:41,reserve output ByteArray,forest,vericut,6,0.528,0.127,67,1085103,0.1864
 25822b5,2026-11-01T15:40:43,reserve output ByteArray,forest,vericut,7,0.553,0.127,67,1074813,0.1846
 25822b5,2026-11-01T15:40:46,reserve output ByteArray,forest,vericut,8,0.964,0.129,67,1073203,0.1844
+85b3612,2026-11-01T15:53:50,Lean v4.35.0 toolchain bump,piano,vericut,0,0.731,0.286,91,4329538,0.4044
+85b3612,2026-11-01T15:53:54,Lean v4.35.0 toolchain bump,piano,vericut,1,0.840,0.293,91,4320385,0.4035
+85b3612,2026-11-01T15:55:22,Lean v4.35.0 toolchain bump,piano,vericut,2,0.870,0.299,91,4320385,0.4035
+85b3612,2026-11-01T15:55:27,Lean v4.35.0 toolchain bump,piano,vericut,3,1.219,0.298,92,4041199,0.3774
+85b3612,2026-11-01T15:55:32,Lean v4.35.0 toolchain bump,piano,vericut,4,1.251,0.306,92,3989227,0.3726
+85b3612,2026-11-01T15:55:37,Lean v4.35.0 toolchain bump,piano,vericut,5,1.290,0.308,92,3989000,0.3726
+85b3612,2026-11-01T15:55:42,Lean v4.35.0 toolchain bump,piano,vericut,6,1.244,0.306,92,3988999,0.3726
+85b3612,2026-11-01T15:55:47,Lean v4.35.0 toolchain bump,piano,vericut,7,1.423,0.350,92,3930436,0.3671
+85b3612,2026-11-01T15:55:56,Lean v4.35.0 toolchain bump,piano,vericut,8,2.461,0.333,93,3923398,0.3664
+85b3612,2026-11-01T15:55:58,Lean v4.35.0 toolchain bump,forest,vericut,0,0.390,0.176,69,3011386,0.5173
+85b3612,2026-11-01T15:55:59,Lean v4.35.0 toolchain bump,forest,vericut,1,0.413,0.118,65,1515732,0.2604
+85b3612,2026-11-01T15:56:01,Lean v4.35.0 toolchain bump,forest,vericut,2,0.412,0.119,65,1515732,0.2604
+85b3612,2026-11-01T15:56:03,Lean v4.35.0 toolchain bump,forest,vericut,3,0.560,0.117,65,1139642,0.1958
+85b3612,2026-11-01T15:56:06,Lean v4.35.0 toolchain bump,forest,vericut,4,0.578,0.119,65,1085105,0.1864
+85b3612,2026-11-01T15:56:08,Lean v4.35.0 toolchain bump,forest,vericut,5,0.598,0.118,66,1085094,0.1864
+85b3612,2026-11-01T15:56:10,Lean v4.35.0 toolchain bump,forest,vericut,6,0.602,0.117,66,1085103,0.1864
+85b3612,2026-11-01T15:56:12,Lean v4.35.0 toolchain bump,forest,vericut,7,0.619,0.123,65,1074813,0.1846
+85b3612,2026-11-01T15:56:16,Lean v4.35.0 toolchain bump,forest,vericut,8,1.035,0.123,65,1073203,0.1844
+85b3612,2026-11-01T15:57:35,Lean v4.35.0 toolchain bump,podcast,vericut,5,61.423,11.593,3251,131356914,0.2029
