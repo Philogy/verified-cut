@@ -99,7 +99,8 @@ def animate():
                      fontsize=17, x=0.02, ha="left")
         fig.tight_layout(rect=(0, 0, 1, 0.94))
     anim = FuncAnimation(fig, upd, frames=len(frames))
-    anim.save(HERE / "pareto.gif", writer=PillowWriter(fps=1), dpi=80)
+    # dpi 160: 2400 px wide, so the slide (and README) only ever scales it down
+    anim.save(HERE / "pareto.gif", writer=PillowWriter(fps=1), dpi=160)
     if shutil.which("ffmpeg"):
         tmp = HERE / "_frames"; tmp.mkdir(exist_ok=True)
         for i in range(len(order)):

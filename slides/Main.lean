@@ -58,7 +58,7 @@ public def main : IO UInt32 := do
   IO.FS.writeFile (out / "custom.css") (← IO.FS.readFile ("static" / "custom.css"))
   IO.FS.writeFile (out / "logo.svg") (← IO.FS.readFile ("static" / "logo.svg"))
   -- Plots are read from bench/ at build time so the deck shows whatever was last benchmarked.
-  for img in ["pareto.gif", "pareto-final.png", "flac-progress.png"] do
+  for img in ["pareto.gif", "pareto-final.png", "flac-progress.png", "vs-libflac.png"] do
     IO.FS.writeBinFile (out / img) (← IO.FS.readBinFile (".." / "bench" / img))
   let htmlPath := out / "index.html"
   let html ← IO.FS.readFile htmlPath

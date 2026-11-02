@@ -117,7 +117,7 @@ Piano 60.7 s at -5, median wall time; podcast 61.2 min at -5. Spec unchanged thr
 # Pareto Frontier Over the Commits
 
 ```html
-<img style="display:block;margin:0 auto;width:92vw;max-width:none;max-height:none" src="pareto.gif" alt="Size/speed Pareto frontier of vericut levels -0..-8 per commit against libFLAC">
+<img class="img-plot" src="pareto.gif" alt="Size/speed Pareto frontier of vericut levels -0..-8 per commit against libFLAC">
 ```
 
 # Where We Stand
@@ -126,13 +126,8 @@ Piano 60.7 s at -5, median wall time; podcast 61.2 min at -5. Spec unchanged thr
 <div class="two-col" style="grid-template-columns:3fr 2fr">
 <img style="max-width:100%;max-height:62vh" src="pareto-final.png" alt="Final vericut frontier vs libFLAC">
 <div>
-<table>
-<tr><th>-5, piano / forest</th><th>vericut</th><th>libFLAC</th></tr>
-<tr><td>encode s</td><td>1.160 / 0.509</td><td>0.067 / 0.034</td></tr>
-<tr><td>size, % of WAV</td><td>37.26 / 18.64</td><td>37.33 / 18.78</td></tr>
-<tr><td>piano decode s</td><td>0.329</td><td>0.042</td></tr>
-</table>
-<p style="font-size:0.6em;color:#7c6f64">Table: commit 95565b4, median wall time.</p>
+<img style="max-width:100%" src="vs-libflac.png" alt="vericut vs libFLAC at -5: encode time, size, decode time">
+<p style="font-size:0.6em;color:#7c6f64">-5, commit 95565b4, median wall time.</p>
 </div>
 </div>
 ```

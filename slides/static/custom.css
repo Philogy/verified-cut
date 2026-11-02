@@ -459,6 +459,16 @@
   max-height: 40vh;
 }
 
+/* Full-slide plot: fills what the header leaves, keeps its aspect ratio. */
+.reveal section img.img-plot {
+  display: block;
+  margin: 1vh auto 0;
+  width: auto;
+  height: auto;
+  max-width: 94vw;
+  max-height: 78vh;
+}
+
 /* ── hstack layout ── */
 .reveal .r-hstack {
   display: flex !important;
