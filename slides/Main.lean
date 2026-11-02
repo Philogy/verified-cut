@@ -9,9 +9,8 @@ open VersoSlides
 def titleSlide : String :=
   "<section class=\"title-slide split\" data-state=\"title\">" ++
   "<div class=\"logo-pane\"><img class=\"logo\" src=\"logo.svg\" alt=\"Verified Cut\"></div>" ++
-  "<div class=\"text-pane\"><h1>Verified Cut</h1>" ++
-  "<div class=\"meta\">A FLAC audio cutter, proven correct in Lean 4<br><strong>Philippe Dumonet</strong></div>" ++
-  "<div class=\"date\">2026</div>" ++
+  "<div class=\"text-pane\"><h1>Vericut</h1>" ++
+  "<div class=\"meta\">An audio editor and encoder built using Lean4<br><strong>Philippe Dumonet</strong></div>" ++
   "</div></section>"
 
 def icon (name : String) : IO String := do
@@ -26,11 +25,12 @@ def outroSlide : IO String := do
       | none => s!"<div class=\"contact\">{body}</div>"
   return "<section class=\"title-slide split outro\" data-state=\"title\">" ++
     "<div class=\"logo-pane\"><img class=\"logo\" src=\"logo.svg\" alt=\"Verified Cut\"></div>" ++
-    "<div class=\"text-pane\"><h1>Thanks for listening!</h1><div class=\"contacts\">" ++
+    "<div class=\"text-pane\"><h1>Thanks for listening!</h1><div class=\"outro-row\"><div class=\"contacts\">" ++
     (← row "mail" "philippe@dumo.net" (some "mailto:philippe@dumo.net")) ++
     (← row "x" "@real_philogy" (some "https://x.com/real_philogy")) ++
     (← row "github" "github.com/Philogy/verified-cut" (some "https://github.com/Philogy/verified-cut")) ++
-    "</div></div></section>"
+    "</div><img class=\"cv-qr\" src=\"cv-qr.svg\" alt=\"QR code linking to my CV\"></div>" ++
+    "</div></section>"
 
 def slideHeader : String :=
   "<div class=\"slide-header\"></div>"
@@ -57,6 +57,7 @@ public def main : IO UInt32 := do
   let out := config.outputDir
   IO.FS.writeFile (out / "custom.css") (← IO.FS.readFile ("static" / "custom.css"))
   IO.FS.writeFile (out / "logo.svg") (← IO.FS.readFile ("static" / "logo.svg"))
+  IO.FS.writeFile (out / "cv-qr.svg") (← IO.FS.readFile ("static" / "cv-qr.svg"))
   -- Plots are read from bench/ at build time so the deck shows whatever was last benchmarked.
   for img in ["pareto.gif", "pareto-final.png", "flac-progress.png", "vs-libflac.png"] do
     IO.FS.writeBinFile (out / img) (← IO.FS.readBinFile (".." / "bench" / img))

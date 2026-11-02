@@ -591,3 +591,15 @@
 .reveal section .stepped [data-s] { transition: opacity .25s; }
 .reveal section .stepped .step-dim { opacity: 0.18; }
 .reveal section .stepped .ln.step-on { background-color: #D6DDC4; }
+
+.outro .outro-row {
+  display: flex;
+  align-items: center;
+  gap: 2em;
+}
+.outro .cv-qr {
+  width: 22vh;
+  height: 22vh;
+  flex: none;
+  border-radius: 0.4em;
+}

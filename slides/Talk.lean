@@ -5,43 +5,39 @@ open VersoSlides
 
 set_option verso.code.warnLineLength 500
 
-#doc (Slides) "Verified Cut" =>
+#doc (Slides) "Vericut" =>
+
+# What
+
+* A lossless audio encoder and decoder, written and proven in Lean 4
+* A thin GUI, in Swift acts as the interface
+* Output checked against libFLAC 1.5.0 and ffmpeg
+
+# Why
+
+* Video & Audio editing software is notoriously performance constrained
+* Lossless encoding good target for formalization and auto-research
+* Test how vanilla Lean4 + auto-research compares against hardcore optimized codec libs
+
+# Project Learnings I — Agents (while Smart) are Still Pretty Dumb
+
+Opus 5.5 (medium) *not only* missed a trivial optimization, *but also*
+repeatedly failed to implement when prompted.
+
+*Possible Cause:* Top-level specification overly constrained the agent?
+
+# Project Learnings II — Vanilla Lean4 still Lacks important Low-level Optimization Facilities
+
+- `Array α` does *not* unbox small, fixed types such as `UInt32` and
+  structures (as of `v4.36.0-rc1`)
+- SIMD, and other hardware specific low-level primitives (e.g. Apple Silicon's
+  ARM NEON) are not natively available
+- workarounds possible but increase the TCB (`unsafe`, `implemented_by`, FFI)
 
 
-# Thesis
-
-Formalization allows faster hands-free optimization.
-
-* Write a spec that is simple enough to review: a `Nat` bit writer, fixed predictors only
-* Let agents optimize the real codec freely
-* The proof is the gate: a change lands only if the theorems still hold against the *unchanged* spec
-
-# What We Built
-
-* A lossless FLAC encoder and decoder, written and proven in Lean 4 (no Mathlib)
-* An audio splicer on top: cut clips out of WAV files, export one FLAC
-* `vericut` CLI plus a SwiftUI macOS editor that calls it
-* Output checked against libFLAC 1.5.0 and ffmpeg: they decode ours, we decode theirs, bit-exact
-
-# The Spec: Audio and Splicing
-
-```code lean4
-structure Pcm where
-  format : Format
-  samples : Array Int        -- sample c of frame i is samples[i * channels + c]
-
-def Clip.samples (c : Clip) : Array Int :=
-  c.src.samples.extract (c.start * c.src.format.channels) (c.stop * c.src.format.channels)
-
-def splice (format : Format) (clips : List Clip) : Pcm :=
-  ⟨format, (clips.map Clip.samples).foldl (· ++ ·) #[]⟩
-```
-
-`Pcm.Valid`: what FLAC can carry (1-8 channels, 4-32 bits, samples in range).
 
 # What Is Proven
 
-`core/VeriCut/Correctness.lean`
 
 ```code lean4
 theorem flac_roundTrip (st : Flac.Settings) (x : Pcm) (valid : x.Valid) :
@@ -53,11 +49,9 @@ theorem export_correct (st : Flac.Settings) (format : Format) (clips : List Clip
     Flac.decode (exportClips st format clips) = .ok (splice format clips)
 ```
 
-Only `propext`, `Classical.choice`, `Quot.sound`; checked in CI with `lake comparator`.
 
-# The Fast Path
+## + The Fast Path
 
-The CLI runs `Flac/Fast/` (LPC, 64-bit bit writer, streaming, MD5), tied to the same spec `decode`:
 
 ```code lean4
 theorem decodeFast_eq (d : ByteArray) : Flac.Fast.decodeFast d = Flac.decode d
@@ -88,31 +82,11 @@ theorem flac_roundTrip_packed (st : Flac.Fast.Settings) (p : PackedPcm) (valid :
 * Podcast -5: peak memory 3.41 GB → 2.11 GB, 64.1 s → 60.5 s, byte-identical
 * Not yet proven: packed WAV parser agrees with the spec one; its run-time check implies `Valid`
 
-# Trusted, Not Proven
+# Attempted But Scrapped
 
-* That our bitstream is standard FLAC (RFC 9639): the theorems are about our own decoder; libFLAC interop is tested
-* The STREAMINFO MD5: computed, matches libFLAC, no theorem mentions it
-* WAV parsing and writing, file IO, JSON, CLI glue
-* ffmpeg (app imports), the Swift app and its preview
-* Lean's compiler and runtime
+- Video encoding formalization
+- lossy compression with formalized loss measurement
 
-# Optimization Log
-
-Piano 60.7 s at -5, median wall time; podcast 61.2 min at -5. Spec unchanged throughout.
-
-```html
-<table>
-<tr><th>step</th><th>commit</th><th>result</th></tr>
-<tr><td>Baseline: GMP for every <code>2 ^ k</code></td><td><code>b508a0b</code></td><td>piano encode 7.06 s; podcast 305 s</td></tr>
-<tr><td>Planner: one-pass fixed-order choice</td><td><code>8d95b92</code></td><td>piano 7.06 s → 3.33 s</td></tr>
-<tr><td>Bit writer in <code>UInt64</code></td><td><code>c58d6c2</code></td><td>piano 3.33 s → 0.76 s; podcast 305 s → 34.7 s</td></tr>
-<tr><td>Streaming encoder and decoder</td><td><code>687147f</code></td><td>piano RSS 223 MB → 96 MB</td></tr>
-<tr><td>LPC (libFLAC's method)</td><td><code>05433ac</code></td><td>piano 40.2 % → 37.3 % of WAV; 0.76 s → 1.29 s</td></tr>
-<tr><td><code>Int64</code> residuals, Rice estimate</td><td><code>8b2fbe4</code></td><td>piano 1.29 s → 1.07 s</td></tr>
-<tr><td>Spec restored, fast path separate</td><td><code>95565b4</code></td><td>same bytes, same speed</td></tr>
-<tr><td>Packed samples</td><td><code>41e5646</code></td><td>podcast RSS 3.41 GB → 2.11 GB</td></tr>
-</table>
-```
 
 # Pareto Frontier Over the Commits
 
@@ -134,3 +108,10 @@ Piano 60.7 s at -5, median wall time; podcast 61.2 min at -5. Spec unchanged thr
 
 * Within 0.3 % of libFLAC's size, slightly smaller at -0/-5/-8: we keep the cheapest candidate per subframe
 * 10-17x slower to encode, ~8x to decode: no SIMD, and the hot loops still read samples as boxed `Int`
+
+# Low Hanging Fruit & Future Work
+
+- Avoid big integer overhead by using fixed size types
+- expose lower-level `SIMD` directives via simple `implemented_by` wrappers
+- Handroll packed, aligned "Array" type
+- Use faster program language (either eDSL or Rust + prover tooling)
