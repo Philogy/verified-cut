@@ -3,6 +3,7 @@ import VeriCut.Export
 import VeriCut.Flac.Fast.Decode
 import VeriCut.Flac.Fast.Export
 import VeriCut.Wav
+import VeriCut.Impl.Packed
 
 /-!
 # `vericut` command line
@@ -173,9 +174,16 @@ def main (args : List String) : IO UInt32 := do
     | "encode" :: i :: o :: rest =>
       let st ← levelArg rest
       let t0 ← IO.monoMsNow
-      let x ← load i
-      liftE i x.validate
-      writeOut o (Flac.Fast.encodeFast st x) x.length t0
+      let d ← IO.FS.readBinFile i
+      if isFlac d then
+        let x ← liftE i (Flac.Fast.decodeFast d)
+        liftE i x.validate
+        writeOut o (Flac.Fast.encodeFast st x) x.length t0
+      else
+        -- Samples stay packed, 4 bytes each; `flac_roundTrip_packed` covers `encodePacked`.
+        let x ← liftE i (Wav.parsePacked d)
+        liftE i x.validate
+        writeOut o (Flac.Fast.encodePacked st x) (Flac.Fast.lengthP x) t0
     | ["decode", i, o] =>
       let t0 ← IO.monoMsNow
       let x ← load i
