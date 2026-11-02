@@ -1,0 +1,580 @@
+/* Adapted from leodemoura/ETAPSTutorial2026 (static/custom.css) */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --accent: #905E43;
+  --text-heading: #4a3426;
+  --text-dark: #3c3836;
+  --text-muted: #7c6f64;
+  --bg-code: #faf6f2;
+  --border-code: #e2d6ca;
+  --bg-inline-code: #f3ece4;
+}
+
+/* ── Base typography ── */
+.reveal {
+  font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 300;
+  font-size: 3.4vh;
+  color: var(--text-dark);
+}
+
+.reveal h1, .reveal h2, .reveal h3, .reveal h4, .reveal h5, .reveal h6 {
+  text-transform: none;
+  font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 500;
+  color: var(--text-heading);
+}
+
+.reveal .slides section {
+  text-align: left;
+  padding: 2vh 3vw;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ── Slide header (teal line) ── */
+.slide-header {
+  height: 1.5px;
+  margin: 3vh 0 0.5em;
+  background: var(--accent);
+}
+
+/* ── Title slide ── */
+.title-slide {
+  display: flex !important;
+  flex-direction: row;
+  align-items: stretch;
+  text-align: left;
+  padding: 0 !important;
+}
+.title-slide .logo-pane {
+  flex: 0 0 38%;
+  background: #E9E0D7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.reveal .title-slide .logo {
+  display: block;
+  width: 64%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  /* The root node sits left of the SVG's centre; shift so the tree reads as centred. */
+  transform: translateX(8%);
+}
+.title-slide .text-pane {
+  flex: 1;
+  background: #905E43;
+  padding: 0 7% 0 6%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.title-slide h1 {
+  font-size: 1.6em;
+  font-weight: 300;
+  line-height: 1.2;
+  margin: 0;
+  color: #ffffff;
+}
+.title-slide h1::after {
+  content: "";
+  display: block;
+  width: 3em;
+  height: 2px;
+  margin: 0.6em 0 0.7em;
+  background: #EBD5C0;
+}
+.title-slide .meta {
+  font-size: 0.8em;
+  font-weight: 300;
+  color: #ffffff;
+  line-height: 1.6;
+}
+.title-slide .meta strong {
+  font-weight: 500;
+  color: #ffffff;
+}
+.title-slide .date {
+  font-size: 0.8em;
+  font-weight: 300;
+  color: #EBD5C0;
+  margin-top: 0.2em;
+}
+
+/* Alternative: horizontal lockup on light ground. */
+.title-slide.lockup {
+  background: #E9E0D7;
+  justify-content: center;
+  align-items: center;
+  gap: 4vw;
+  padding-left: 4vw !important;
+  border-bottom: 1.2vh solid #905E43;
+}
+.title-slide.lockup .logo-pane {
+  flex: 0 0 auto;
+  background: none;
+  padding-right: 4vw;
+  border-right: 2px solid #905E43;
+}
+.reveal .title-slide.lockup .logo {
+  width: auto;
+  height: 30vh;
+}
+.title-slide.lockup .text-pane {
+  flex: 0 1 46vw;
+  background: none;
+  padding: 0;
+}
+.title-slide.lockup h1,
+.title-slide.lockup .meta,
+.title-slide.lockup .meta strong {
+  color: var(--text-dark);
+}
+.title-slide.lockup h1::after {
+  display: none;
+}
+.title-slide.lockup h1 {
+  margin-bottom: 1.2em;
+}
+.reveal .title-slide.lockup .logo {
+  transform: none;
+}
+.title-slide.lockup .date {
+  color: #905E43;
+}
+
+/* ── reveal.js controls and progress bar ── */
+.reveal .controls,
+.reveal .progress {
+  color: var(--accent);
+}
+.reveal .progress {
+  background-color: #EBD5C0;
+}
+/* The title slide's band is the accent colour, so the arrows would vanish on it. */
+.reveal-viewport.title .reveal .controls {
+  color: #EBD5C0;
+}
+.reveal-viewport.title:has(.title-slide.lockup) .reveal .controls {
+  color: var(--accent);
+}
+/* At slide 1 the progress bar is all track, which shows as a light strip under the band. */
+.reveal-viewport.title .reveal .progress,
+.reveal-viewport.title .reveal .slide-number {
+  display: none !important;
+}
+/* reveal.js puts the number in the same corner as the arrows. */
+.reveal .slide-number {
+  left: 3vw;
+  right: auto;
+  bottom: 1.6vh;
+  background: none;
+  color: #7c6f64;
+  font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 1.8vh;
+  font-weight: 400;
+  padding: 0;
+}
+
+/* ── Content slides ── */
+.reveal h2 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 0 0 0.5em 0;
+  color: var(--text-heading);
+}
+
+.reveal ul li::marker {
+  color: var(--accent);
+}
+
+.reveal ul {
+  font-size: 0.9em;
+  font-weight: 300;
+  line-height: 1.7;
+  margin: 0;
+  padding-left: 1.2em;
+}
+.reveal ul ul {
+  font-size: 1em;
+}
+.reveal ul li {
+  margin-bottom: 0.25em;
+}
+
+.reveal p {
+  font-size: 0.9em;
+  font-weight: 300;
+  line-height: 1.6;
+  margin: 0.4em 0;
+}
+
+.reveal strong {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.reveal a {
+  color: #905E43;
+  font-weight: 600;
+}
+
+/* ── Code blocks (non-Lean) ── */
+.reveal pre {
+  font-size: 0.68em;
+  width: 100%;
+  margin: 0.4em 0;
+  box-shadow: none;
+  border: 1px solid var(--border-code);
+  border-radius: 6px;
+  background: var(--bg-code);
+}
+.reveal pre code {
+  padding: 0.8em 1em;
+  max-height: 70vh;
+  background: var(--bg-code);
+}
+
+/* ── Inline code ── */
+.reveal code {
+  font-size: 0.9em;
+  background: var(--bg-inline-code);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+.reveal pre code {
+  background: var(--bg-code);
+  padding: 0.8em 1em;
+}
+
+/* ── Accent ── */
+.accent {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Key-value highlight boxes ── */
+.key-box {
+  background: #E9E0D7;
+  border: 1px solid #EBD5C0;
+  border-left: 4px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  padding: 0.6em 1em;
+  margin: 0.4em 0;
+  font-size: 0.85em;
+}
+.key-box strong {
+  color: var(--text-dark);
+}
+
+/* ── Dark background slides (title, section breaks) ── */
+.reveal section[data-background-color="#905E43"] {
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center;
+}
+.reveal section[data-background-color="#905E43"] h1,
+.reveal section[data-background-color="#905E43"] h2 {
+  color: #ffffff !important;
+  font-size: 2em;
+  font-weight: 300;
+}
+.reveal section[data-background-color="#905E43"] p,
+.reveal section[data-background-color="#905E43"] li {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1em;
+}
+.reveal section[data-background-color="#905E43"] em {
+  color: #EBD5C0;
+}
+.reveal section[data-background-color="#905E43"] strong {
+  color: #ffffff;
+}
+.reveal section[data-background-color="#905E43"] code {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+/* ── Two-column layout ── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5em;
+  align-items: start;
+}
+
+/* ── Blockquotes ── */
+.reveal blockquote {
+  font-size: 0.85em;
+  border-left: 4px solid var(--accent);
+  padding: 0.3em 0.8em;
+  margin: 0.5em 0;
+  background: #E9E0D7;
+  border-radius: 0 6px 6px 0;
+}
+
+/* ═══════════════════════════════════════════════
+   Lean code: syntax colors
+   ═══════════════════════════════════════════════ */
+
+/* Gruvbox Light accents, with the deck's brown for keywords. */
+.reveal,
+.reveal section,
+.reveal section.slide-light-bg,
+.reveal .r-overlay-lean-hover.slide-light-bg {
+  --verso-code-keyword-color: #905E43;
+  --verso-code-const-color: #076678;
+  --verso-code-var-color: #3c3836;
+  --verso-code-comment-color: #7c6f64;
+  --verso-code-color: #3c3836;
+  --verso-code-literal-color: #af3a03;
+  --verso-code-sort-color: #8f3f71;
+  --verso-code-hover-bg-color: #EBD5C0;
+  --verso-code-font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  --verso-info-indicator-color: var(--accent);
+  --verso-code-keyword-weight: 700;
+}
+
+/* ── Lean code block appearance ── */
+.reveal code.hl.lean.block {
+  background: var(--bg-code);
+  border: 1px solid var(--border-code);
+  border-radius: 6px;
+  box-shadow: none;
+  padding: 0.8em 1em;
+  font-size: 0.5em;
+  line-height: 1.55;
+  width: 95%;
+  max-width: 95%;
+  text-align: left;
+}
+
+/* ── Code panel: Verso info panel alongside code ── */
+.code-with-panel {
+  border: 1px solid var(--border-code);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.code-with-panel > code.hl.lean.block {
+  border: none;
+  border-radius: 6px 0 0 6px;
+  background: var(--bg-code);
+}
+.code-with-panel > .panel-cell {
+  background: var(--bg-code);
+}
+/* The resize handle is drawn as a grey bar that reads as an empty scrollbar. */
+.code-with-panel > .panel-divider {
+  background: linear-gradient(var(--border-code), var(--border-code)) center / 1px 100% no-repeat;
+}
+.code-with-panel > .panel-divider:hover,
+.code-with-panel > .panel-divider:active {
+  background-size: 2px 100%;
+  background-image: linear-gradient(var(--accent), var(--accent));
+}
+.code-with-panel > .info-panel,
+.code-with-panel .info-panel {
+  font-size: 0.45em;
+  color: var(--text-dark);
+}
+
+/* ── Inline Lean code ── */
+.reveal code.hl.lean.inline {
+  background: var(--bg-inline-code);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.85em;
+}
+
+/* ── #eval output ── */
+.command-output.information {
+  background: #E9E0D7;
+  border-color: var(--accent);
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.command-output.information code {
+  background: none;
+  padding: 0;
+}
+
+/* ── Soften wavy underlines on info diagnostics ── */
+.reveal .hl.lean .has-info.information .token:not(.tactic-state):not(.tactic-state *),
+.reveal .hl.lean .has-info.information .inter-text:not(.tactic-state):not(.tactic-state *) {
+  text-decoration-color: rgba(144, 94, 67, 0.35);
+}
+
+.reveal .hl.lean .literal,
+.reveal .hl.lean .number,
+.reveal .hl.lean .char {
+  color: var(--verso-code-literal-color);
+}
+.reveal .hl.lean .sort,
+.reveal .hl.lean .level-const,
+.reveal .hl.lean .level-var,
+.reveal .hl.lean .level-op {
+  color: var(--verso-code-sort-color);
+}
+
+/* ── Keyword: bold and colored ── */
+.hl.lean .keyword {
+  font-weight: 700 !important;
+}
+
+/* ── Variable: no italic ── */
+.hl.lean .var {
+  font-style: normal !important;
+}
+
+/* ── Re-enable Verso hover popups ── */
+.hl.lean .hover-container {
+  display: block;
+}
+
+/* ── Images: scale to fit slide ── */
+.reveal section img {
+  max-width: 70%;
+  max-height: 45vh;
+  object-fit: contain;
+}
+.reveal section img.img-tall {
+  max-height: 70vh;
+  max-width: 95%;
+}
+.reveal section img.img-small {
+  max-height: 25vh;
+  max-width: 40%;
+}
+.reveal section img.img-wide {
+  max-width: 90%;
+  max-height: 40vh;
+}
+
+/* ── hstack layout ── */
+.reveal .r-hstack {
+  display: flex !important;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 1.5em;
+}
+.reveal .r-hstack > ul {
+  flex: 1;
+}
+.reveal .r-hstack > p {
+  flex: 1;
+}
+.reveal .r-hstack > hr,
+.reveal .r-hstack > p:empty {
+  display: none;
+}
+
+/* ── Table styling ── */
+.reveal table {
+  font-size: 0.75em;
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  width: 100%;
+}
+.reveal table th {
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  padding: 0.4em 0.8em;
+  text-align: left;
+}
+.reveal table td {
+  padding: 0.3em 0.8em;
+  border-bottom: 1px solid var(--border-code);
+}
+.reveal table tr:nth-child(even) td {
+  background: var(--bg-code);
+}
+
+/* Fragment that stays visible and turns bold when reached. */
+.reveal .slides section .fragment.embolden { opacity: 1; visibility: inherit; transition: font-weight 0.2s, color 0.2s; }
+.reveal .slides section .fragment.embolden.visible { font-weight: 700; color: var(--accent); }
+
+/* verso-slides shrink-wraps non-Lean blocks (width: fit-content; margin: auto), so match the Lean block width instead */
+.reveal pre:not(.code-with-panel pre) {
+  width: 95%;
+  max-width: 95%;
+}
+
+.reveal .slides pre.big-code {
+  font-size: 0.5em;
+}
+
+/* highlight.js (non-Lean blocks) in the Gruvbox-light palette used for Lean */
+.reveal pre code.hljs { color: #3c3836; }
+.reveal .hljs-keyword, .reveal .hljs-built_in, .reveal .hljs-meta { color: #905E43; font-weight: 600; }
+.reveal .hljs-type, .reveal .hljs-title, .reveal .hljs-title.class_ { color: #8f3f71; }
+.reveal .hljs-number, .reveal .hljs-string, .reveal .hljs-literal { color: #af3a03; }
+.reveal .hljs-comment { color: #7c6f64; font-style: italic; }
+.reveal .hljs-title.function_, .reveal .hljs-variable, .reveal .hljs-symbol { color: #076678; }
+
+/* ── Outro slide: title-slide split, contacts instead of meta ── */
+.outro .contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  font-size: 0.75em;
+  font-weight: 300;
+}
+.reveal .outro .contact {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.8em;
+  color: #ffffff;
+  text-decoration: none;
+}
+.reveal .outro a.contact:hover span {
+  text-decoration: underline;
+}
+.outro .contact .icon {
+  flex: 0 0 auto;
+  width: 1.1em;
+  height: 1.1em;
+  color: #EBD5C0;
+}
+
+/* ── Appendix: sources ── */
+.reveal ul.sources li {
+  margin-bottom: 0.6em;
+  line-height: 1.4;
+}
+.reveal ul.sources .desc {
+  display: block;
+  font-size: 0.85em;
+  color: #7c6f64;
+}
+
+/* ── iTree diagrams (state diagram / tree) ── */
+.reveal section img.itree-diagram {
+  display: block;
+  margin: 4vh auto 0;
+  max-width: 92%;
+  max-height: 68vh;
+}
+
+/* ── Click-stepped code + diagram (itree-steps.js) ── */
+.reveal section .stepped {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.5vw;
+  align-items: center;
+  margin-top: 6vh;
+}
+.reveal .slides .stepped pre.big-code { margin: 0; width: auto; max-width: none; font-size: 0.62em; }
+.reveal section .stepped pre code { overflow: visible; max-height: none; width: max-content; }
+.reveal section .stepped .itree-diagram svg { display: block; width: 100%; height: auto; max-height: 62vh; }
+.reveal section .stepped .ln { display: block; padding: 0 0.4em; border-radius: 4px; transition: opacity .25s, background-color .25s; }
+.reveal section .stepped [data-s] { transition: opacity .25s; }
+.reveal section .stepped .step-dim { opacity: 0.18; }
+.reveal section .stepped .ln.step-on { background-color: #EBD5C0; }
