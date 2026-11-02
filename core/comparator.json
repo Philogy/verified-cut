@@ -6,7 +6,8 @@
     "VeriCut.export_correct",
     "VeriCut.decodeFast_eq",
     "VeriCut.flac_roundTrip_fast",
-    "VeriCut.export_correct_fast"
+    "VeriCut.export_correct_fast",
+    "VeriCut.flac_roundTrip_packed"
   ],
   "permitted_axioms": ["propext", "Quot.sound", "Classical.choice"]
 }
