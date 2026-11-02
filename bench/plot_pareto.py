@@ -23,9 +23,13 @@ VC, LF = "#c0392b", "#2c3e50"
 
 rows = list(csv.DictReader(open(HERE / "flac-optimization.csv")))
 # best (min) encode time per commit/clip/tool/level; ratio and other columns from that row
+# 85b3612 only bumps the toolchain to 4.35 (7-15% slower encode); not an optimization step
+SKIP = {"85b3612"}
 best, order, desc, first_ts = {}, [], {}, {}
 for r in rows:
     c = r["commit"][:7]
+    if c in SKIP:
+        continue
     if r["tool"] == "vericut" and c not in first_ts:
         first_ts[c] = r["timestamp"]
         d = r["description"].split(":")[0].split(" (")[0]
