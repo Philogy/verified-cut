@@ -19,6 +19,8 @@ cd .. && python3 tests/test_vericut.py
 cd app && swift run               # the editor; uses ../core/.lake/build/bin/vericut ($VERICUT_BIN overrides)
 ```
 
+Sample WAVs to try: [`samples/audio/`](samples/audio/).
+
 CLI contract: `docs/cli.md`. Pipeline, file by file: `docs/pipeline.md`.
 
 > [!WARNING]
