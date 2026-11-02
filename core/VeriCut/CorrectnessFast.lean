@@ -2,6 +2,7 @@ import VeriCut.Correctness
 import VeriCut.Flac.Fast.Export
 import VeriCut.Proofs.Fast.RoundTrip
 import VeriCut.Proofs.Fast.Decode
+import VeriCut.Impl.Packed
 
 /-!
 The theorems for what the CLI runs. `Correctness.lean` states the round trip for the spec's
@@ -47,5 +48,14 @@ example (st : Flac.Fast.Settings) (format : Format) (clips : List Clip)
 
 /-- info: 'VeriCut.export_correct_fast' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms export_correct_fast
+
+/-- Data refinement: packed PCM `p`, encoded by `encodePacked`, decodes (spec `decode`) to
+its abstraction `p.toSpec`, given only that the abstraction is valid PCM. -/
+theorem flac_roundTrip_packed (st : Flac.Fast.Settings) (p : PackedPcm) (valid : p.toSpec.Valid) :
+    Flac.decode (Flac.Fast.encodePacked st p) = .ok p.toSpec :=
+  flac_roundTrip_fast st p.toSpec valid
+
+/-- info: 'VeriCut.flac_roundTrip_packed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in #print axioms flac_roundTrip_packed
 
 end VeriCut
