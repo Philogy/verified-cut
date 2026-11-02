@@ -8,7 +8,6 @@ samples/
 
 # scratch, kept locally only
 _to_delete/
-lossy/
 
 # video-era benchmark (untracked; MP4 cutter is gone)
 bench/bin/
