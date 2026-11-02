@@ -83,3 +83,18 @@ Against libFLAC 1.5.0 (`bench/RESULTS-audio.md`, data in `bench/flac-optimizatio
 `bench/flac-optimization.png`): within 0.3 % of libFLAC's size at every level, 10-17x slower to
 encode, about 8x slower to decode. A 61-minute podcast at -5 encodes in 52.7 s with 3.5 GB peak
 RSS.
+
+### Optimization
+
+Each step below kept the round-trip and export theorems proven (spec unchanged; speedups live in
+`Flac/Fast/` with equality proofs). The animation shows the size/speed Pareto frontier of
+vericut levels -0..-8 per commit (red, earlier frontiers faded) against libFLAC -0..-8 (dark,
+fixed). Commits before `95565b4` were benchmarked at levels 0/5/8 only.
+
+![Pareto frontier over the optimization history](bench/pareto.gif)
+
+![Final frontier vs libFLAC](bench/pareto-final.png)
+
+![Encode/decode time and peak RSS per commit](bench/flac-progress.png)
+
+Video version: `bench/pareto.mp4`. Regenerate with `uv run bench/plot_pareto.py`.

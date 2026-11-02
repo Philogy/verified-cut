@@ -2,8 +2,8 @@
 
 Current state (`95565b4`, the CLI's fast path): within 0.3 % of libFLAC's size at levels 0, 5
 and 8, 10-17x slower to encode, about 8x slower to decode, 3.5 GB peak RSS on a 61-minute
-podcast. Table at the end of step 9. Plot: `bench/flac-optimization.png`
-(`uv run bench/plot_flac_optimization.py`). Steps 2-8 below were first made in the spec codec
+podcast. Table at the end of step 9. Plots: `bench/flac-progress.png`, `bench/pareto-final.png`, animation `bench/pareto.gif`
+(`uv run bench/plot_pareto.py`). Steps 2-8 below were first made in the spec codec
 and moved to `Flac/Fast/` in step 9; the spec is unchanged since `8a7a9cd`.
 
 ## Starting point (`bce05d8`, Apple M5 Pro, single run, wall clock)
