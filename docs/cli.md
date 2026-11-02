@@ -20,7 +20,7 @@ cannot encode (float, A-law, compressed WAVs, more than 8 channels), which the a
 decide to convert with ffmpeg first.
 
 `--level` 0–8 roughly follows `flac -N` (block size, partition order, stereo modes); every level
-is lossless (`flac_roundTrip_fast`). Levels 3 and up use LPC. Default 5.
+is lossless (`flac_roundTrip_fast`). Levels 3 and up use LPC. Default 8.
 
 WAV output is format 1 up to stereo 16-bit and WAVE_FORMAT_EXTENSIBLE above.
 STREAMINFO carries the MD5 of the samples, as libFLAC computes it, so `flac -t` checks it.

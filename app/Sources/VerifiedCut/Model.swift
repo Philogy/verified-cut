@@ -35,7 +35,7 @@ final class Timeline {
     var status: String = "Import audio to begin."
     var busy = false
     /// FLAC compression level passed to `vericut export`.
-    var level = 5
+    var level = 8
     var player = AVPlayer()
     /// Output time of the preview player, in seconds.
     var playhead: Double = 0

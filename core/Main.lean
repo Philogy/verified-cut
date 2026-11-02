@@ -33,7 +33,7 @@ def load (path : String) : IO Pcm := do
   liftE path (if isFlac d then Flac.Fast.decodeFast d else Wav.parse d)
 
 def levelArg : List String → IO Flac.Fast.Settings
-  | [] => pure (.level 5)
+  | [] => pure (.level 8)
   | ["--level", n] => match n.toNat? with
     | some n => pure (.level n)
     | none => throw (IO.userError s!"bad level {n}")
