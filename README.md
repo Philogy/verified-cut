@@ -41,24 +41,43 @@ theorem export_correct (st : Flac.Settings) (format : Format) (clips : List Clip
 
 `Flac.encode` and `Flac.decode` are written to be read: a `Nat` bit writer, fixed predictors
 only. The CLI runs the optimized codec in [`core/VeriCut/Flac/Fast/`](core/VeriCut/Flac/Fast/) (LPC, 64-bit writer,
-streaming, MD5). [`core/VeriCut/CorrectnessFast.lean`](core/VeriCut/CorrectnessFast.lean) ([`decodeFast_eq`](core/VeriCut/CorrectnessFast.lean#L20), [`flac_roundTrip_fast`](core/VeriCut/CorrectnessFast.lean#L24), [`export_correct_fast`](core/VeriCut/CorrectnessFast.lean#L29)) ties it to the same spec `decode`, with
+streaming, MD5). [`core/VeriCut/CorrectnessFast.lean`](core/VeriCut/CorrectnessFast.lean) ([`decodeFast_eq`](core/VeriCut/CorrectnessFast.lean#L21), [`flac_roundTrip_fast`](core/VeriCut/CorrectnessFast.lean#L25), [`export_correct_fast`](core/VeriCut/CorrectnessFast.lean#L30)) ties it to the same spec `decode`, with
 the same hypotheses:
 
 ```lean
-theorem decodeFast_eq (d : ByteArray) : Flac.Fast.decodeFast d = Flac.decode d          -- :20
+theorem decodeFast_eq (d : ByteArray) : Flac.Fast.decodeFast d = Flac.decode d          -- :21
 
 theorem flac_roundTrip_fast (st : Flac.Fast.Settings) (x : Pcm) (valid : x.Valid) :
-    Flac.decode (Flac.Fast.encodeFast st x) = .ok x                                       -- :24
+    Flac.decode (Flac.Fast.encodeFast st x) = .ok x                                       -- :25
 
 theorem export_correct_fast ... :   -- export_correct's hypotheses
-    Flac.decode (exportClipsFast st format clips) = .ok (splice format clips)            -- :29
+    Flac.decode (exportClipsFast st format clips) = .ok (splice format clips)            -- :30
 ```
+
+`vericut encode` keeps samples packed (4 bytes each in a `ByteArray`,
+[`core/VeriCut/Impl/Packed.lean`](core/VeriCut/Impl/Packed.lean)) instead of an `Array Int` of boxed
+values. This is a data refinement: [`PackedPcm.toSpec`](core/VeriCut/Impl/Packed.lean#L38) maps packed
+samples to the spec `Pcm`, [`encodePacked_eq`](core/VeriCut/Impl/Packed.lean#L137) shows the packed encoder emits the
+same bytes as `encodeFast` on `toSpec`, and the round trip is restated through it, still
+against the spec `decode`
+([`flac_roundTrip_packed`](core/VeriCut/CorrectnessFast.lean#L54)):
+
+```lean
+theorem encodePacked_eq (st : Settings) (x : PackedPcm) :
+    encodePacked st x = encodeFast st x.toSpec                                          -- Packed.lean:137
+
+theorem flac_roundTrip_packed (st : Flac.Fast.Settings) (p : PackedPcm) (valid : p.toSpec.Valid) :
+    Flac.decode (encodePacked st p) = .ok p.toSpec                                      -- :54
+```
+
+Not yet proven: that the packed WAV parser agrees with the `Array Int` one, and that its
+run-time validity check implies `p.toSpec.Valid`. `export` and the app still use `Array Int`.
 
 Definitions these mention: [`core/VeriCut/Spec/Audio.lean`](core/VeriCut/Spec/Audio.lean) (`Format`, `Pcm`, `Pcm.Valid`,
 `Clip`, `Clip.Valid`, `splice`) and the spec decoder in [`core/VeriCut/Flac/`](core/VeriCut/Flac/) ([`Parse.lean`](core/VeriCut/Flac/Parse.lean)
 reads a stream, [`Format.lean`](core/VeriCut/Flac/Format.lean) gives its meaning). [`Pcm.valid_of_validate`](core/VeriCut/Proofs/Splice.lean#L80) shows the CLI's
 run-time check establishes `Pcm.Valid`. [`Examples.lean`](core/VeriCut/Examples.lean) discharges every hypothesis on concrete
-audio. All five theorems use only `propext`, `Classical.choice`, `Quot.sound`, checked with
+audio. All six theorems use only `propext`, `Classical.choice`, `Quot.sound`, checked with
 `#guard_msgs` in the build.
 
 ## Trusted, not proven
