@@ -1,9 +1,6 @@
 # Verified Cut
 
-An audio splicer with a FLAC encoder and decoder written in Lean 4, proven lossless.
-For every PCM input FLAC can carry and every encoder setting, decoding what we encode gives
-back exactly the input. An exported timeline decodes to exactly the requested sample ranges,
-in order.
+An audio splicer with a losless FLAC encoder and decoder written and proven \*correct in Lean 4.
 
 ```
 core/     Lean 4 library and the `vericut` CLI (spec, FLAC codec, WAV, proofs)
@@ -22,17 +19,15 @@ cd .. && python3 tests/test_vericut.py
 cd app && swift run               # the editor; uses ../core/.lake/build/bin/vericut ($VERICUT_BIN overrides)
 ```
 
-`app/dev/vericut-stub` is an unverified ffmpeg stand-in, for app development only
-(`app/dev/README.md`). CLI contract: `docs/cli.md`. Pipeline, file by file: `docs/pipeline.md`.
+CLI contract: `docs/cli.md`. Pipeline, file by file: `docs/pipeline.md`.
 
-To listen to an export, use VLC or another player. QuickTime Player plays FLAC unreliably
-(seeking lands at the wrong time, the tail may not play), with libFLAC's files as well as ours.
-To use QuickTime, convert to ALAC: `afconvert -f m4af -d alac out.flac out.m4a`. Apple Music
-can't import FLAC at all.
+> [!WARNING]
+> QuickTime Player plays FLAC unreliably (libFLAC's files too). Use VLC, or convert to ALAC:
+> `afconvert -f m4af -d alac out.flac out.m4a`.
 
 ## What is proven
 
-Spec, `core/VeriCut/Correctness.lean`:
+Spec, [`core/VeriCut/Correctness.lean`](core/VeriCut/Correctness.lean) ([`flac_roundTrip`](core/VeriCut/Correctness.lean#L17), [`export_correct`](core/VeriCut/Correctness.lean#L24)):
 
 ```lean
 theorem flac_roundTrip (st : Flac.Settings) (x : Pcm) (valid : x.Valid) :
@@ -45,8 +40,8 @@ theorem export_correct (st : Flac.Settings) (format : Format) (clips : List Clip
 ```
 
 `Flac.encode` and `Flac.decode` are written to be read: a `Nat` bit writer, fixed predictors
-only. The CLI runs the optimized codec in `core/VeriCut/Flac/Fast/` (LPC, 64-bit writer,
-streaming, MD5). `core/VeriCut/CorrectnessFast.lean` ties it to the same spec `decode`, with
+only. The CLI runs the optimized codec in [`core/VeriCut/Flac/Fast/`](core/VeriCut/Flac/Fast/) (LPC, 64-bit writer,
+streaming, MD5). [`core/VeriCut/CorrectnessFast.lean`](core/VeriCut/CorrectnessFast.lean) ([`decodeFast_eq`](core/VeriCut/CorrectnessFast.lean#L20), [`flac_roundTrip_fast`](core/VeriCut/CorrectnessFast.lean#L24), [`export_correct_fast`](core/VeriCut/CorrectnessFast.lean#L29)) ties it to the same spec `decode`, with
 the same hypotheses:
 
 ```lean
@@ -59,10 +54,10 @@ theorem export_correct_fast ... :   -- export_correct's hypotheses
     Flac.decode (exportClipsFast st format clips) = .ok (splice format clips)            -- :29
 ```
 
-Definitions these mention: `core/VeriCut/Spec/Audio.lean` (`Format`, `Pcm`, `Pcm.Valid`,
-`Clip`, `Clip.Valid`, `splice`) and the spec decoder in `core/VeriCut/Flac/` (`Parse.lean`
-reads a stream, `Format.lean` gives its meaning). `Pcm.valid_of_validate` shows the CLI's
-run-time check establishes `Pcm.Valid`. `Examples.lean` discharges every hypothesis on concrete
+Definitions these mention: [`core/VeriCut/Spec/Audio.lean`](core/VeriCut/Spec/Audio.lean) (`Format`, `Pcm`, `Pcm.Valid`,
+`Clip`, `Clip.Valid`, `splice`) and the spec decoder in [`core/VeriCut/Flac/`](core/VeriCut/Flac/) ([`Parse.lean`](core/VeriCut/Flac/Parse.lean)
+reads a stream, [`Format.lean`](core/VeriCut/Flac/Format.lean) gives its meaning). [`Pcm.valid_of_validate`](core/VeriCut/Proofs/Splice.lean#L80) shows the CLI's
+run-time check establishes `Pcm.Valid`. [`Examples.lean`](core/VeriCut/Examples.lean) discharges every hypothesis on concrete
 audio. All five theorems use only `propext`, `Classical.choice`, `Quot.sound`, checked with
 `#guard_msgs` in the build.
 
