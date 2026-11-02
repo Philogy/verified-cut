@@ -58,7 +58,7 @@ theorem export_correct_fast ... :   -- export_correct's hypotheses
 
 Lean stores `Array Int` as 8-byte pointers to boxed values. `vericut encode` instead keeps samples
 packed, 4 bytes each in a `ByteArray` ([`core/VeriCut/Impl/Packed.lean`](core/VeriCut/Impl/Packed.lean)),
-which cut peak memory on a 1h44m podcast from 3.41 GB to 2.11 GB (64.1 s to 60.5 s), with
+which cut peak memory on the podcast benchmark from 3.41 GB to 2.11 GB (64.1 s to 60.5 s), with
 byte-identical output. The spec keeps its readable `Pcm` and is unchanged; the optimization is
 proven against it as a data refinement: [`PackedPcm.toSpec`](core/VeriCut/Impl/Packed.lean#L38) maps packed
 samples to the spec `Pcm`, [`encodePacked_eq`](core/VeriCut/Impl/Packed.lean#L137) shows the packed encoder emits the
