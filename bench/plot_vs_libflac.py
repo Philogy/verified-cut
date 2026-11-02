@@ -17,11 +17,11 @@ plt.rcParams.update({"font.size": 15, "axes.titlesize": 17,
 # (title, clips, vericut, libFLAC, value format)
 panels = [
     ("encode (s)", ["piano", "forest"], [1.160, 0.509], [0.067, 0.034], "{:.2f}"),
-    ("size (% of WAV)", ["piano", "forest"], [37.26, 18.64], [37.33, 18.78], "{:.1f}"),
     ("decode (s)", ["piano"], [0.329], [0.042], "{:.2f}"),
+    ("size (% of WAV)", ["piano", "forest"], [37.26, 18.64], [37.33, 18.78], "{:.1f}"),
 ]
 
-fig, axes = plt.subplots(1, 3, figsize=(12, 4.6), gridspec_kw={"width_ratios": [2, 2, 1.2]})
+fig, axes = plt.subplots(1, 3, figsize=(12, 4.6), gridspec_kw={"width_ratios": [2, 1.2, 2]})
 w = 0.38
 for ax, (title, clips, vc, lf, fmt) in zip(axes, panels):
     xs = range(len(clips))
