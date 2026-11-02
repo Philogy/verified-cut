@@ -3,13 +3,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --accent: #905E43;
-  --text-heading: #4a3426;
-  --text-dark: #3c3836;
-  --text-muted: #7c6f64;
-  --bg-code: #faf6f2;
-  --border-code: #e2d6ca;
-  --bg-inline-code: #f3ece4;
+  --accent: #4A6B52;
+  --text-heading: #2F3D33;
+  --text-dark: #33302B;
+  --text-muted: #736D62;
+  --bg-code: #F8F6EF;
+  --border-code: #DCD8C8;
+  --bg-inline-code: #EFECE2;
 }
 
 /* ── Base typography ── */
@@ -50,9 +50,12 @@
   text-align: left;
   padding: 0 !important;
 }
+.title-slide:not(.outro) {
+  flex-direction: row-reverse;
+}
 .title-slide .logo-pane {
   flex: 0 0 38%;
-  background: #E9E0D7;
+  background: #ECE7DA;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -68,7 +71,7 @@
 }
 .title-slide .text-pane {
   flex: 1;
-  background: #905E43;
+  background: #4A6B52;
   padding: 0 7% 0 6%;
   display: flex;
   flex-direction: column;
@@ -87,7 +90,7 @@
   width: 3em;
   height: 2px;
   margin: 0.6em 0 0.7em;
-  background: #EBD5C0;
+  background: #D6DDC4;
 }
 .title-slide .meta {
   font-size: 0.8em;
@@ -102,24 +105,24 @@
 .title-slide .date {
   font-size: 0.8em;
   font-weight: 300;
-  color: #EBD5C0;
+  color: #D6DDC4;
   margin-top: 0.2em;
 }
 
 /* Alternative: horizontal lockup on light ground. */
 .title-slide.lockup {
-  background: #E9E0D7;
+  background: #ECE7DA;
   justify-content: center;
   align-items: center;
   gap: 4vw;
   padding-left: 4vw !important;
-  border-bottom: 1.2vh solid #905E43;
+  border-bottom: 1.2vh solid #4A6B52;
 }
 .title-slide.lockup .logo-pane {
   flex: 0 0 auto;
   background: none;
   padding-right: 4vw;
-  border-right: 2px solid #905E43;
+  border-right: 2px solid #4A6B52;
 }
 .reveal .title-slide.lockup .logo {
   width: auto;
@@ -145,7 +148,7 @@
   transform: none;
 }
 .title-slide.lockup .date {
-  color: #905E43;
+  color: #4A6B52;
 }
 
 /* ── reveal.js controls and progress bar ── */
@@ -154,11 +157,11 @@
   color: var(--accent);
 }
 .reveal .progress {
-  background-color: #EBD5C0;
+  background-color: #D6DDC4;
 }
 /* The title slide's band is the accent colour, so the arrows would vanish on it. */
 .reveal-viewport.title .reveal .controls {
-  color: #EBD5C0;
+  color: #D6DDC4;
 }
 .reveal-viewport.title:has(.title-slide.lockup) .reveal .controls {
   color: var(--accent);
@@ -174,7 +177,7 @@
   right: auto;
   bottom: 1.6vh;
   background: none;
-  color: #7c6f64;
+  color: #736D62;
   font-family: 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 1.8vh;
   font-weight: 400;
@@ -220,7 +223,7 @@
 }
 
 .reveal a {
-  color: #905E43;
+  color: #4A6B52;
   font-weight: 600;
 }
 
@@ -260,8 +263,8 @@
 
 /* ── Key-value highlight boxes ── */
 .key-box {
-  background: #E9E0D7;
-  border: 1px solid #EBD5C0;
+  background: #ECE7DA;
+  border: 1px solid #D6DDC4;
   border-left: 4px solid var(--accent);
   border-radius: 0 8px 8px 0;
   padding: 0.6em 1em;
@@ -273,29 +276,29 @@
 }
 
 /* ── Dark background slides (title, section breaks) ── */
-.reveal section[data-background-color="#905E43"] {
+.reveal section[data-background-color="#4A6B52"] {
   display: flex !important;
   flex-direction: column;
   justify-content: center;
 }
-.reveal section[data-background-color="#905E43"] h1,
-.reveal section[data-background-color="#905E43"] h2 {
+.reveal section[data-background-color="#4A6B52"] h1,
+.reveal section[data-background-color="#4A6B52"] h2 {
   color: #ffffff !important;
   font-size: 2em;
   font-weight: 300;
 }
-.reveal section[data-background-color="#905E43"] p,
-.reveal section[data-background-color="#905E43"] li {
+.reveal section[data-background-color="#4A6B52"] p,
+.reveal section[data-background-color="#4A6B52"] li {
   color: rgba(255, 255, 255, 0.9);
   font-size: 1.1em;
 }
-.reveal section[data-background-color="#905E43"] em {
-  color: #EBD5C0;
+.reveal section[data-background-color="#4A6B52"] em {
+  color: #D6DDC4;
 }
-.reveal section[data-background-color="#905E43"] strong {
+.reveal section[data-background-color="#4A6B52"] strong {
   color: #ffffff;
 }
-.reveal section[data-background-color="#905E43"] code {
+.reveal section[data-background-color="#4A6B52"] code {
   background: rgba(255, 255, 255, 0.15);
   color: #ffffff;
 }
@@ -314,7 +317,7 @@
   border-left: 4px solid var(--accent);
   padding: 0.3em 0.8em;
   margin: 0.5em 0;
-  background: #E9E0D7;
+  background: #ECE7DA;
   border-radius: 0 6px 6px 0;
 }
 
@@ -322,19 +325,19 @@
    Lean code: syntax colors
    ═══════════════════════════════════════════════ */
 
-/* Gruvbox Light accents, with the deck's brown for keywords. */
+/* Warm light palette: sage keywords, burnt-orange constants. */
 .reveal,
 .reveal section,
 .reveal section.slide-light-bg,
 .reveal .r-overlay-lean-hover.slide-light-bg {
-  --verso-code-keyword-color: #905E43;
-  --verso-code-const-color: #076678;
-  --verso-code-var-color: #3c3836;
-  --verso-code-comment-color: #7c6f64;
-  --verso-code-color: #3c3836;
-  --verso-code-literal-color: #af3a03;
-  --verso-code-sort-color: #8f3f71;
-  --verso-code-hover-bg-color: #EBD5C0;
+  --verso-code-keyword-color: #4A6B52;
+  --verso-code-const-color: #9A4F1C;
+  --verso-code-var-color: #33302B;
+  --verso-code-comment-color: #736D62;
+  --verso-code-color: #33302B;
+  --verso-code-literal-color: #A33B2B;
+  --verso-code-sort-color: #6B4C8A;
+  --verso-code-hover-bg-color: #D6DDC4;
   --verso-code-font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   --verso-info-indicator-color: var(--accent);
   --verso-code-keyword-weight: 700;
@@ -394,7 +397,7 @@
 
 /* ── #eval output ── */
 .command-output.information {
-  background: #E9E0D7;
+  background: #ECE7DA;
   border-color: var(--accent);
   border-radius: 4px;
   font-size: 0.9em;
@@ -407,7 +410,7 @@
 /* ── Soften wavy underlines on info diagnostics ── */
 .reveal .hl.lean .has-info.information .token:not(.tactic-state):not(.tactic-state *),
 .reveal .hl.lean .has-info.information .inter-text:not(.tactic-state):not(.tactic-state *) {
-  text-decoration-color: rgba(144, 94, 67, 0.35);
+  text-decoration-color: rgba(74, 107, 82, 0.35);
 }
 
 .reveal .hl.lean .literal,
@@ -510,13 +513,13 @@
   font-size: 0.5em;
 }
 
-/* highlight.js (non-Lean blocks) in the Gruvbox-light palette used for Lean */
-.reveal pre code.hljs { color: #3c3836; }
-.reveal .hljs-keyword, .reveal .hljs-built_in, .reveal .hljs-meta { color: #905E43; font-weight: 600; }
-.reveal .hljs-type, .reveal .hljs-title, .reveal .hljs-title.class_ { color: #8f3f71; }
-.reveal .hljs-number, .reveal .hljs-string, .reveal .hljs-literal { color: #af3a03; }
-.reveal .hljs-comment { color: #7c6f64; font-style: italic; }
-.reveal .hljs-title.function_, .reveal .hljs-variable, .reveal .hljs-symbol { color: #076678; }
+/* highlight.js (non-Lean blocks) in the palette used for Lean */
+.reveal pre code.hljs { color: #33302B; }
+.reveal .hljs-keyword, .reveal .hljs-built_in, .reveal .hljs-meta { color: #4A6B52; font-weight: 600; }
+.reveal .hljs-type, .reveal .hljs-title, .reveal .hljs-title.class_ { color: #9A4F1C; }
+.reveal .hljs-number, .reveal .hljs-string, .reveal .hljs-literal { color: #A33B2B; }
+.reveal .hljs-comment { color: #736D62; font-style: italic; }
+.reveal .hljs-title.function_, .reveal .hljs-variable, .reveal .hljs-symbol { color: #6B4C8A; }
 
 /* ── Outro slide: title-slide split, contacts instead of meta ── */
 .outro .contacts {
@@ -541,7 +544,7 @@
   flex: 0 0 auto;
   width: 1.1em;
   height: 1.1em;
-  color: #EBD5C0;
+  color: #D6DDC4;
 }
 
 /* ── Appendix: sources ── */
@@ -552,7 +555,7 @@
 .reveal ul.sources .desc {
   display: block;
   font-size: 0.85em;
-  color: #7c6f64;
+  color: #736D62;
 }
 
 /* ── iTree diagrams (state diagram / tree) ── */
@@ -577,4 +580,4 @@
 .reveal section .stepped .ln { display: block; padding: 0 0.4em; border-radius: 4px; transition: opacity .25s, background-color .25s; }
 .reveal section .stepped [data-s] { transition: opacity .25s; }
 .reveal section .stepped .step-dim { opacity: 0.18; }
-.reveal section .stepped .ln.step-on { background-color: #EBD5C0; }
+.reveal section .stepped .ln.step-on { background-color: #D6DDC4; }
