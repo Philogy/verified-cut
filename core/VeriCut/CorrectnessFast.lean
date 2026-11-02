@@ -53,7 +53,7 @@ example (st : Flac.Fast.Settings) (format : Format) (clips : List Clip)
 its abstraction `p.toSpec`, given only that the abstraction is valid PCM. -/
 theorem flac_roundTrip_packed (st : Flac.Fast.Settings) (p : PackedPcm) (valid : p.toSpec.Valid) :
     Flac.decode (Flac.Fast.encodePacked st p) = .ok p.toSpec :=
-  flac_roundTrip_fast st p.toSpec valid
+  Flac.Fast.encodePacked_eq st p ▸ flac_roundTrip_fast st p.toSpec valid
 
 /-- info: 'VeriCut.flac_roundTrip_packed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in #print axioms flac_roundTrip_packed
