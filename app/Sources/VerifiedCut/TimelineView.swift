@@ -43,6 +43,7 @@ struct TimelineEditor: View {
     @State private var visibleWidth: CGFloat = 600
     /// Horizontal span of the timeline currently on screen, in content coordinates.
     @State private var visible: ClosedRange<CGFloat> = 0...600
+    @State private var scroll = ScrollPosition()
     /// Clip origins frozen for the length of a trim drag, so the dragged edge follows the cursor;
     /// later clips ripple when the drag ends.
     @State private var frozen: [Clip.ID: Double]?
@@ -95,7 +96,9 @@ struct TimelineEditor: View {
                     .frame(width: max(layout.width, visibleWidth), alignment: .leading)
                     .coordinateSpace(name: "timeline")
                 }
+                .scrollPosition($scroll)
                 .onScrollGeometryChange(for: ClosedRange<CGFloat>.self, of: { $0.visibleRect.minX...$0.visibleRect.maxX }) { visible = $1 }
+                .onChange(of: pps) { centerPlayhead() }
                 .background(GeometryReader { g in
                     Color.clear.onAppear { visibleWidth = g.size.width }
                         .onChange(of: g.size.width) { visibleWidth = $1 }
@@ -145,6 +148,16 @@ struct TimelineEditor: View {
                 .accessibilityIdentifier("timeline.fit")
         }
         .padding(.horizontal, 10)
+    }
+
+    /// Keep the playhead in the middle while zooming, so the part being edited stays on screen.
+    /// Deferred a runloop turn: the content has to take its new width before the offset is valid.
+    private func centerPlayhead() {
+        DispatchQueue.main.async {
+            let layout = TimelineLayout(clips: timeline.clips, starts: timeline.starts, frozen: frozen, pps: pps)
+            let maxX = max(0, layout.width - visibleWidth)
+            scroll.scrollTo(x: min(max(0, layout.x(timeline.playhead) - visibleWidth / 2), maxX))
+        }
     }
 
     private func clampZoom(_ v: Double) -> Double { min(max(v, Self.ppsRange.lowerBound), Self.ppsRange.upperBound) }
