@@ -22,9 +22,8 @@ def I32Array.size (a : I32Array) : Nat := a.bytes.size / 4
 /-- Sample `i`, read as 4 little-endian bytes in two's complement. -/
 def I32Array.get (a : I32Array) (i : Nat) : Int :=
   if i < a.size then
-  let b (k : Nat) : Nat := (a.bytes.get! (4 * i + k)).toNat
-  let n := b 0 + 256 * b 1 + 65536 * b 2 + 16777216 * b 3
-  if n < 2 ^ 31 then (n : Int) else (n : Int) - 2 ^ 32
+    let b (k : Nat) : UInt32 := (a.bytes.get! (4 * i + k)).toUInt32
+    (b 0 ||| (b 1 <<< 8) ||| (b 2 <<< 16) ||| (b 3 <<< 24)).toInt32.toInt
   else 0
 
 /-- The abstraction function: the samples as the spec sees them. -/
@@ -148,7 +147,11 @@ def PackedPcm.isValid (x : PackedPcm) : Bool :=
   decide (1 ≤ f.channels ∧ f.channels ≤ 8 ∧ 4 ≤ f.bitsPerSample ∧ f.bitsPerSample ≤ 32 ∧
     1 ≤ f.sampleRate ∧ f.sampleRate < 2 ^ 20 ∧ x.samples.size % f.channels = 0 ∧
     x.samples.size / f.channels < 2 ^ 36) &&
-  (List.range x.samples.size).all fun i => let s := x.samples.get i; -lim ≤ s ∧ s < lim
+  Id.run do
+    for i in [0:x.samples.size] do
+      let s := x.samples.get i
+      unless -lim ≤ s ∧ s < lim do return false
+    return true
 
 def PackedPcm.validate (x : PackedPcm) : Except String Unit :=
   if x.isValid then .ok () else .error "invalid PCM (format or sample out of range)"
