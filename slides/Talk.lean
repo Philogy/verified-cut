@@ -65,23 +65,6 @@ theorem export_correct_fast ... :   -- export_correct's hypotheses
 
 No extra hypotheses: bounds the fast code relies on are checked at run time, with a proven fallback.
 
-# Packed Samples: a Data Refinement
-
-`Array Int` is 8-byte pointers to boxed values; `PackedPcm` keeps 4 bytes per sample in a `ByteArray`.
-
-```code lean4
-def PackedPcm.toSpec : PackedPcm → Pcm      -- abstraction function
-
-theorem encodePacked_eq (st : Settings) (x : PackedPcm) :
-    encodePacked st x = encodeFast st x.toSpec
-
-theorem flac_roundTrip_packed (st : Flac.Fast.Settings) (p : PackedPcm) (valid : p.toSpec.Valid) :
-    Flac.decode (encodePacked st p) = .ok p.toSpec
-```
-
-* Podcast -5: peak memory 3.41 GB → 2.11 GB, 64.1 s → 60.5 s, byte-identical
-* Not yet proven: packed WAV parser agrees with the spec one; its run-time check implies `Valid`
-
 # Attempted But Scrapped
 
 - Video encoding formalization
