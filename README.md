@@ -14,7 +14,7 @@ docs/     CLI contract, pipeline with trust boundaries, Tart VM for GUI tests
 
 ```sh
 brew install flac ffmpeg          # flac: reference codec for tests; ffmpeg: the app's imports
-cd core && lake build             # proofs and the vericut binary (Lean v4.33.0, no Mathlib)
+cd core && lake build             # proofs and the vericut binary (Lean v4.35.0, no Mathlib)
 cd .. && python3 tests/test_vericut.py
 cd app && swift run               # the editor; uses ../core/.lake/build/bin/vericut ($VERICUT_BIN overrides)
 ```
@@ -54,9 +54,13 @@ theorem export_correct_fast ... :   -- export_correct's hypotheses
     Flac.decode (exportClipsFast st format clips) = .ok (splice format clips)            -- :30
 ```
 
-`vericut encode` keeps samples packed (4 bytes each in a `ByteArray`,
-[`core/VeriCut/Impl/Packed.lean`](core/VeriCut/Impl/Packed.lean)) instead of an `Array Int` of boxed
-values. This is a data refinement: [`PackedPcm.toSpec`](core/VeriCut/Impl/Packed.lean#L38) maps packed
+### Packed samples: a proven data refinement
+
+Lean stores `Array Int` as 8-byte pointers to boxed values. `vericut encode` instead keeps samples
+packed, 4 bytes each in a `ByteArray` ([`core/VeriCut/Impl/Packed.lean`](core/VeriCut/Impl/Packed.lean)),
+which cut peak memory on a 1h44m podcast from 3.41 GB to 2.11 GB (64.1 s to 60.5 s), with
+byte-identical output. The spec keeps its readable `Pcm` and is unchanged; the optimization is
+proven against it as a data refinement: [`PackedPcm.toSpec`](core/VeriCut/Impl/Packed.lean#L38) maps packed
 samples to the spec `Pcm`, [`encodePacked_eq`](core/VeriCut/Impl/Packed.lean#L137) shows the packed encoder emits the
 same bytes as `encodeFast` on `toSpec`, and the round trip is restated through it, still
 against the spec `decode`
